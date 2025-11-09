@@ -8,6 +8,7 @@ import (
 
 // Document représente un document stocké dans le système
 type Document struct {
+	// Champs existants
 	ID          uuid.UUID `json:"id"`
 	Filename    string    `json:"filename"`
 	ContentType string    `json:"content_type"`
@@ -15,6 +16,29 @@ type Document struct {
 	SHA256Hex   string    `json:"sha256_hex"`
 	StoredPath  string    `json:"stored_path"`
 	CreatedAt   time.Time `json:"created_at"`
+
+	// Métadonnées Odoo (Sprint 1)
+	Source    *string `json:"source,omitempty"`     // sales|purchase|pos|stock|sale
+	OdooModel *string `json:"odoo_model,omitempty"` // account.move, pos.order, etc.
+	OdooID    *int    `json:"odoo_id,omitempty"`    // ID dans Odoo
+	OdooState *string `json:"odoo_state,omitempty"` // posted, paid, done, etc.
+
+	// Routage PDP (préparation Sprint 2)
+	PDPRequired   *bool   `json:"pdp_required,omitempty"`   // Nécessite dispatch PDP ?
+	DispatchStatus *string `json:"dispatch_status,omitempty"` // PENDING|SENT|ACK|REJECTED
+
+	// Métadonnées facture (préparation Sprint 2 - validation Factur-X)
+	InvoiceNumber *string    `json:"invoice_number,omitempty"`
+	InvoiceDate   *time.Time `json:"invoice_date,omitempty"`
+	TotalHT       *float64   `json:"total_ht,omitempty"`
+	TotalTTC      *float64   `json:"total_ttc,omitempty"`
+	Currency      *string    `json:"currency,omitempty"`
+	SellerVAT     *string    `json:"seller_vat,omitempty"`
+	BuyerVAT      *string    `json:"buyer_vat,omitempty"`
+
+	// Preuves d'intégrité (Sprint 2)
+	EvidenceJWS *string `json:"evidence_jws,omitempty"` // Jeton JWS signé
+	LedgerHash  *string `json:"ledger_hash,omitempty"`  // Hash dans le ledger
 }
 
 // DocumentListResponse représente la réponse pour la liste de documents

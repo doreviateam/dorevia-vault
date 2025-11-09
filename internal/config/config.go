@@ -8,10 +8,22 @@ import (
 
 // Config contient toute la configuration de l'application
 type Config struct {
-	Port       string `env:"PORT" envDefault:"8080"`
-	LogLevel   string `env:"LOG_LEVEL" envDefault:"info"`
+	Port        string `env:"PORT" envDefault:"8080"`
+	LogLevel    string `env:"LOG_LEVEL" envDefault:"info"`
 	DatabaseURL string `env:"DATABASE_URL" envDefault:""`
 	StorageDir  string `env:"STORAGE_DIR" envDefault:"/opt/dorevia-vault/storage"`
+	
+	// JWS Configuration (Sprint 2)
+	JWSEnabled         bool   `env:"JWS_ENABLED" envDefault:"true"`
+	JWSRequired        bool   `env:"JWS_REQUIRED" envDefault:"true"`
+	JWSPrivateKeyPath  string `env:"JWS_PRIVATE_KEY_PATH" envDefault:""`
+	JWSPublicKeyPath   string `env:"JWS_PUBLIC_KEY_PATH" envDefault:""`
+	JWSPrivateKeyBase64 string `env:"JWS_PRIVATE_KEY_BASE64" envDefault:""`
+	JWSPublicKeyBase64  string `env:"JWS_PUBLIC_KEY_BASE64" envDefault:""`
+	JWSKID              string `env:"JWS_KID" envDefault:"key-2025-Q1"`
+	
+	// Ledger Configuration (Sprint 2)
+	LedgerEnabled bool `env:"LEDGER_ENABLED" envDefault:"true"`
 }
 
 // Load charge la configuration depuis les variables d'environnement

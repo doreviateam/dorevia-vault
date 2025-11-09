@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/doreviateam/dorevia-vault/internal/config"
+	"github.com/doreviateam/dorevia-vault/internal/crypto"
 	"github.com/doreviateam/dorevia-vault/internal/handlers"
 	"github.com/doreviateam/dorevia-vault/internal/middleware"
 	"github.com/doreviateam/dorevia-vault/internal/storage"
@@ -35,6 +36,23 @@ func main() {
 		log.Info().Msg("PostgreSQL connection established")
 	} else {
 		log.Warn().Msg("DATABASE_URL not configured, database features disabled")
+	}
+
+	// Initialisation du service JWS (optionnel)
+	var jwsService *crypto.Service
+	if cfg.JWSEnabled && (cfg.JWSPrivateKeyPath != "" || cfg.JWSPrivateKeyBase64 != "") {
+		var err error
+		jwsService, err = crypto.NewService(cfg.JWSPrivateKeyPath, cfg.JWSPublicKeyPath, cfg.JWSKID)
+		if err != nil {
+			if cfg.JWSRequired {
+				log.Fatal().Err(err).Msg("JWS required but initialization failed")
+			}
+			log.Warn().Err(err).Msg("JWS initialization failed, continuing without JWS")
+		} else {
+			log.Info().Str("kid", cfg.JWSKID).Msg("JWS service initialized")
+		}
+	} else if cfg.JWSEnabled {
+		log.Warn().Msg("JWS_ENABLED=true but no key path configured, JWS disabled")
 	}
 
 	// Initialisation de l'application Fiber
@@ -72,7 +90,20 @@ func main() {
 		app.Get("/documents", handlers.DocumentsListHandler(db))
 		app.Get("/documents/:id", handlers.DocumentByIDHandler(db))
 		app.Get("/download/:id", handlers.DownloadHandler(db))
-		log.Info().Msg("Database routes enabled: /dbhealth, /upload, /documents, /documents/:id, /download/:id")
+		
+		// Route Sprint 1 : Endpoint d'ingestion Odoo
+		app.Post("/api/v1/invoices", handlers.InvoicesHandler(db, cfg.StorageDir, jwsService, &cfg, log))
+		
+		// Route Sprint 2 : Export ledger
+		app.Get("/api/v1/ledger/export", handlers.LedgerExportHandler(db, log))
+		
+		// Route Sprint 2 : JWKS endpoint
+		if jwsService != nil {
+			app.Get("/jwks.json", handlers.JWKSHandler(jwsService, log))
+			log.Info().Msg("JWKS endpoint enabled: /jwks.json")
+		}
+		
+		log.Info().Msg("Database routes enabled: /dbhealth, /upload, /documents, /documents/:id, /download/:id, /api/v1/invoices, /api/v1/ledger/export")
 	}
 
 	// Gestion de l'arrêt propre

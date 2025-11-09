@@ -114,7 +114,10 @@ func (db *DB) ListDocuments(ctx context.Context, query models.DocumentQuery) ([]
 func (db *DB) GetDocumentByID(ctx context.Context, id uuid.UUID) (*models.Document, error) {
 	var doc models.Document
 	err := db.Pool.QueryRow(ctx, `
-		SELECT id, filename, content_type, size_bytes, sha256_hex, stored_path, created_at
+		SELECT id, filename, content_type, size_bytes, sha256_hex, stored_path, created_at,
+		       source, odoo_model, odoo_id, odoo_state, pdp_required, dispatch_status,
+		       invoice_number, invoice_date, total_ht, total_ttc, currency, seller_vat, buyer_vat,
+		       evidence_jws, ledger_hash
 		FROM documents
 		WHERE id = $1
 	`, id).Scan(
@@ -125,6 +128,21 @@ func (db *DB) GetDocumentByID(ctx context.Context, id uuid.UUID) (*models.Docume
 		&doc.SHA256Hex,
 		&doc.StoredPath,
 		&doc.CreatedAt,
+		&doc.Source,
+		&doc.OdooModel,
+		&doc.OdooID,
+		&doc.OdooState,
+		&doc.PDPRequired,
+		&doc.DispatchStatus,
+		&doc.InvoiceNumber,
+		&doc.InvoiceDate,
+		&doc.TotalHT,
+		&doc.TotalTTC,
+		&doc.Currency,
+		&doc.SellerVAT,
+		&doc.BuyerVAT,
+		&doc.EvidenceJWS,
+		&doc.LedgerHash,
 	)
 
 	if err == pgx.ErrNoRows {

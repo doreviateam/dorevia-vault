@@ -1,0 +1,82 @@
+Sprint 2: Intégration JWS + Ledger - Documents Vérifiables
+
+## Fonctionnalités Principales
+
+### Module JWS (JSON Web Signature)
+- Service crypto/jws.go : Signature RS256, vérification, génération JWKS
+- Générateur de clés cmd/keygen : Génération RSA-2048 + JWKS
+- Handler jwks.go : Endpoint /jwks.json avec cache HTTP
+- 15 tests unitaires complets (100% passent)
+
+### Module Ledger (Hash-chaîné)
+- ledger/append.go : Chaînage immuable avec verrou FOR UPDATE
+- ledger/export.go : Export JSON/CSV avec pagination
+- Migration 004_add_ledger.sql : Table ledger avec index et contraintes
+- 4 tests unitaires
+
+### Intégration Transactionnelle
+- storage/document_with_evidence.go : Flux atomique complet
+- Intégration JWS + Ledger dans invoices.go
+- Mode dégradé JWS configurable (JWS_REQUIRED)
+- Idempotence renforcée avec vérification ledger
+
+### Configuration
+- Variables JWS_ENABLED, JWS_REQUIRED, LEDGER_ENABLED
+- Support clés PEM et base64 (variables d'environnement)
+- Migration 003 : Ajout colonnes evidence_jws, ledger_hash
+
+### Endpoints API
+- POST /api/v1/invoices : Ingestion avec JWS + Ledger
+- GET /jwks.json : JWKS pour vérification externe
+- GET /api/v1/ledger/export : Export ledger JSON/CSV
+
+### Tests
+- 38 tests unitaires au total (100% passent)
+- Tests JWS complets (signature, vérification, tampering)
+- Tests ledger (format, protection, export)
+
+### Documentation
+- INTEGRATION_JWS_LEDGER_COMPLETE.md
+- TESTS_JWS_UNITAIRES.md
+- AVIS_EXPERT_SPRINT2_RESUME.md
+
+## Fichiers Modifiés/Créés
+
+Nouveaux modules:
+- internal/crypto/jws.go
+- internal/ledger/append.go
+- internal/ledger/export.go
+- internal/storage/document_with_evidence.go
+- internal/handlers/jwks.go
+- cmd/keygen/main.go
+
+Modifications:
+- internal/handlers/invoices.go (intégration JWS + Ledger)
+- internal/models/document.go (EvidenceJWS, LedgerHash)
+- internal/config/config.go (config JWS + Ledger)
+- internal/storage/queries.go (GetDocumentByID enrichi)
+- cmd/vault/main.go (initialisation JWS + route /jwks.json)
+- migrations/003_add_odoo_fields.sql (evidence_jws, ledger_hash)
+- migrations/004_add_ledger.sql (nouvelle table)
+
+Tests:
+- tests/unit/jws_test.go (15 tests)
+- tests/unit/ledger_append_test.go
+- tests/unit/ledger_export_test.go
+- tests/integration/ledger_test.go
+
+## Notes Techniques
+
+- Algorithme RS256 (RSA-SHA256) conforme RFC 7515
+- JWKS conforme RFC 7517
+- Transaction atomique avec rollback automatique
+- Verrou FOR UPDATE pour concurrence ledger
+- Mode dégradé pour continuité de service
+
+## Statut
+
+✅ Sprint 2 complété avec succès
+✅ Tous les tests passent (38/38)
+✅ Compilation OK
+✅ Documentation complète
+
