@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "🔄 Pulling latest changes..."
+git pull
+
+echo "🔨 Building binary..."
+go build -o bin/vault ./cmd/vault
+
+echo "🚀 Restarting service..."
+sudo systemctl restart dorevia-vault
+
+echo "✅ Deployment complete!"
+
