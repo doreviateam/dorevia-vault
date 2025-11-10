@@ -11,7 +11,7 @@ func CORS() fiber.Handler {
 		AllowOrigins:     "*",
 		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
-		AllowCredentials: true,
+		AllowCredentials: false, // Fix: Cannot use wildcard "*" with AllowCredentials=true (Fiber v2.52.9 security)
 	})
 }
 

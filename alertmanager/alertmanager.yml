@@ -1,0 +1,83 @@
+# 🚨 Configuration Alertmanager — Dorevia Vault
+# Sprint 4 Phase 4.3 — Alerting & Supervision
+
+global:
+  resolve_timeout: 5m
+  # Slack webhook (à configurer)
+  # slack_api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+
+# Templates pour les notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route par défaut
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'severity', 'component']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  routes:
+    # Route pour alertes critiques
+    - match:
+        severity: critical
+      receiver: 'critical'
+      continue: true
+    
+    # Route pour alertes warning
+    - match:
+        severity: warning
+      receiver: 'warning'
+      continue: true
+    
+    # Route pour alertes info
+    - match:
+        severity: info
+      receiver: 'info'
+      continue: false
+
+# Récepteurs (receivers)
+receivers:
+  # Récepteur par défaut (webhook interne)
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://localhost:8080/api/v1/alerts/webhook'
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+
+  # Récepteur critique (Slack + Webhook)
+  - name: 'critical'
+    # Slack (décommenter si configuré)
+    # slack_configs:
+    #   - channel: '#dorevia-vault-alerts'
+    #     title: '🚨 Alerte Critique Dorevia Vault'
+    #     text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+    
+    webhook_configs:
+      - url: 'http://localhost:8080/api/v1/alerts/webhook'
+        send_resolved: true
+
+  # Récepteur warning (Webhook uniquement)
+  - name: 'warning'
+    webhook_configs:
+      - url: 'http://localhost:8080/api/v1/alerts/webhook'
+        send_resolved: true
+
+  # Récepteur info (Webhook uniquement)
+  - name: 'info'
+    webhook_configs:
+      - url: 'http://localhost:8080/api/v1/alerts/webhook'
+        send_resolved: true
+
+# Inhibition (éviter les alertes redondantes)
+inhibit_rules:
+  # Si le service est down, ne pas alerter sur les autres métriques
+  - source_match:
+      severity: 'critical'
+      alertname: 'ServiceDown'
+    target_match:
+      severity: 'warning'
+    equal: ['service']
+

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/doreviateam/dorevia-vault/internal/audit"
 	"github.com/doreviateam/dorevia-vault/internal/config"
 	"github.com/doreviateam/dorevia-vault/internal/crypto"
 	"github.com/doreviateam/dorevia-vault/internal/ledger"
+	"github.com/doreviateam/dorevia-vault/internal/metrics"
 	"github.com/doreviateam/dorevia-vault/internal/models"
 	"github.com/doreviateam/dorevia-vault/internal/storage"
 	"github.com/gofiber/fiber/v2"
@@ -38,7 +40,7 @@ type InvoiceResponse struct {
 
 // InvoicesHandler gère l'endpoint POST /api/v1/invoices
 // Intègre JWS + Ledger si configurés
-func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Service, cfg *config.Config, log *zerolog.Logger) fiber.Handler {
+func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Service, cfg *config.Config, log *zerolog.Logger, auditLogger *audit.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if db == nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -136,6 +138,7 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 
 		// Stocker le document avec JWS + Ledger (si configurés)
 		ctx := context.Background()
+		startTime := time.Now() // Sprint 3 Phase 2 : Mesure durée transaction
 		
 		// Utiliser StoreDocumentWithEvidence si JWS ou Ledger activés
 		if (cfg.JWSEnabled && jwsService != nil) || cfg.LedgerEnabled {
@@ -144,6 +147,10 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 			// Fallback vers méthode simple (Sprint 1)
 			err = db.StoreDocumentWithTransaction(ctx, doc, fileContent, storageDir)
 		}
+
+		// Mesurer durée transaction (Sprint 3 Phase 2)
+		transactionDuration := time.Since(startTime).Seconds()
+		metrics.RecordTransactionDuration(transactionDuration)
 
 		// Gérer l'idempotence (document déjà existant)
 		if err != nil {
@@ -162,6 +169,31 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 					Str("document_id", existingDoc.ID.String()).
 					Str("sha256", existingDoc.SHA256Hex).
 					Msg("Document already exists (idempotence)")
+
+				// Métrique : document idempotent (Sprint 3 Phase 2)
+				source := "unknown"
+				if payload.Source != "" {
+					source = payload.Source
+				}
+				metrics.RecordDocumentVaulted("idempotent", source)
+
+				// Audit : document idempotent (Sprint 4 Phase 4.2)
+				if auditLogger != nil {
+					requestID := c.Get("X-Request-ID")
+					auditLogger.Log(audit.Event{
+						EventType:  audit.EventTypeDocumentVaulted,
+						DocumentID: existingDoc.ID.String(),
+						RequestID:  requestID,
+						Source:     source,
+						Status:     audit.EventStatusIdempotent,
+						DurationMS: int64(time.Since(startTime).Milliseconds()),
+						Metadata: map[string]interface{}{
+							"sha256_hex": existingDoc.SHA256Hex,
+							"odoo_id":    payload.OdooID,
+							"model":      payload.Model,
+						},
+					})
+				}
 
 				// Vérifier si ledger existe pour document existant (idempotence renforcée)
 				var hasLedger bool
@@ -187,10 +219,62 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 				})
 			}
 
+			// Métrique : erreur de stockage (Sprint 3 Phase 2)
+			source := "unknown"
+			if payload.Source != "" {
+				source = payload.Source
+			}
+			metrics.RecordDocumentVaulted("error", source)
+
+			// Audit : erreur de stockage (Sprint 4 Phase 4.2)
+			if auditLogger != nil {
+				requestID := c.Get("X-Request-ID")
+				auditLogger.Log(audit.Event{
+					EventType:  audit.EventTypeDocumentVaulted,
+					RequestID:  requestID,
+					Source:     source,
+					Status:     audit.EventStatusError,
+					DurationMS: int64(time.Since(startTime).Milliseconds()),
+					Metadata: map[string]interface{}{
+						"error": err.Error(),
+						"model": payload.Model,
+					},
+				})
+			}
+
 			log.Error().Err(err).Msg("Failed to store document")
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "Failed to store document",
 				"details": err.Error(),
+			})
+		}
+
+		// Métrique : succès de stockage (Sprint 3 Phase 2)
+		source := "unknown"
+		if payload.Source != "" {
+			source = payload.Source
+		}
+		metrics.RecordDocumentVaulted("success", source)
+
+		// Audit : succès de stockage (Sprint 4 Phase 4.2)
+		if auditLogger != nil {
+			requestID := c.Get("X-Request-ID")
+			auditLogger.Log(audit.Event{
+				EventType:  audit.EventTypeDocumentVaulted,
+				DocumentID: doc.ID.String(),
+				RequestID:  requestID,
+				Source:     source,
+				Status:     audit.EventStatusSuccess,
+				DurationMS: int64(time.Since(startTime).Milliseconds()),
+				Metadata: map[string]interface{}{
+					"sha256_hex":    doc.SHA256Hex,
+					"filename":      filename,
+					"size_bytes":    len(fileContent),
+					"odoo_id":       payload.OdooID,
+					"model":         payload.Model,
+					"evidence_jws":  doc.EvidenceJWS != nil,
+					"ledger_hash":   doc.LedgerHash != nil,
+				},
 			})
 		}
 

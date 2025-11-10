@@ -24,7 +24,8 @@ func Logger(log *zerolog.Logger) fiber.Handler {
 			Str("path", c.Path()).
 			Int("status", c.Response().StatusCode()).
 			Dur("duration", duration).
-			Str("ip", c.IP())
+			Str("ip", c.IP()).
+			Str("request_id", c.Get("X-Request-ID")) // Sprint 3 Phase 2 : Traçabilité requêtes
 
 		if err != nil {
 			event.Err(err)

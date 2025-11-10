@@ -11,6 +11,7 @@ import (
 
 	"github.com/doreviateam/dorevia-vault/internal/crypto"
 	"github.com/doreviateam/dorevia-vault/internal/ledger"
+	"github.com/doreviateam/dorevia-vault/internal/metrics"
 	"github.com/doreviateam/dorevia-vault/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -18,6 +19,7 @@ import (
 
 // StoreDocumentWithEvidence stocke un document avec JWS + Ledger (Sprint 2)
 // Flux complet : fichier → DB → JWS → Ledger → UPDATE evidence
+// Sprint 3 : Ajout timeout transaction (30s par défaut) + métriques Prometheus
 func (db *DB) StoreDocumentWithEvidence(
 	ctx context.Context,
 	doc *models.Document,
@@ -26,13 +28,25 @@ func (db *DB) StoreDocumentWithEvidence(
 	jwsService *crypto.Service,
 	jwsEnabled, jwsRequired, ledgerEnabled bool,
 ) error {
+	// Sprint 3 : Ajouter timeout transaction (30s)
+	transactionTimeout := 30 * time.Second
+	txCtx, cancel := context.WithTimeout(ctx, transactionTimeout)
+	defer cancel()
+	
+	// Sprint 3 Phase 2 : Mesure durée stockage document
+	storageStartTime := time.Now()
+	defer func() {
+		storageDuration := time.Since(storageStartTime).Seconds()
+		metrics.RecordDocumentStorageDuration("store", storageDuration)
+	}()
+
 	// 1. Calculer hash avant transaction
 	hash := sha256.Sum256(content)
 	sha256Hex := hex.EncodeToString(hash[:])
 
 	// 2. Vérifier idempotence (SELECT avant transaction)
 	var existingID uuid.UUID
-	err := db.Pool.QueryRow(ctx, "SELECT id FROM documents WHERE sha256_hex = $1 LIMIT 1", sha256Hex).Scan(&existingID)
+	err := db.Pool.QueryRow(txCtx, "SELECT id FROM documents WHERE sha256_hex = $1 LIMIT 1", sha256Hex).Scan(&existingID)
 	if err == nil {
 		// Document déjà existant
 		doc.ID = existingID
@@ -61,12 +75,12 @@ func (db *DB) StoreDocumentWithEvidence(
 	tmpPath := filepath.Join(datePath, fmt.Sprintf("%s-%s.tmp", docID.String(), doc.Filename))
 	finalPath := filepath.Join(datePath, fmt.Sprintf("%s-%s", docID.String(), doc.Filename))
 
-	// 5. BEGIN transaction
-	tx, err := db.Pool.Begin(ctx)
+	// 5. BEGIN transaction (avec timeout)
+	tx, err := db.Pool.Begin(txCtx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(txCtx)
 
 	// 6. Stocker fichier sur disque (fichier temporaire)
 	if err := os.WriteFile(tmpPath, content, 0644); err != nil {
@@ -74,7 +88,7 @@ func (db *DB) StoreDocumentWithEvidence(
 	}
 
 	// 7. INSERT dans documents (sans evidence_jws et ledger_hash pour l'instant)
-	_, err = tx.Exec(ctx, `
+	_, err = tx.Exec(txCtx, `
 		INSERT INTO documents (
 			id, filename, content_type, size_bytes, sha256_hex, stored_path,
 			source, odoo_model, odoo_id, odoo_state, pdp_required, dispatch_status,
@@ -95,30 +109,51 @@ func (db *DB) StoreDocumentWithEvidence(
 	// 8. Générer JWS (hors transaction mais rapide)
 	var jws string
 	if jwsEnabled && jwsService != nil {
+		jwsStartTime := time.Now() // Sprint 3 Phase 2 : Mesure durée JWS
 		jws, err = jwsService.SignEvidence(docID.String(), sha256Hex, now)
+		jwsDuration := time.Since(jwsStartTime).Seconds()
+		
 		if err != nil {
+			// Métrique : JWS échec (Sprint 3 Phase 2)
+			metrics.RecordJWSSignature("error")
+			metrics.RecordJWSSignatureDuration(jwsDuration)
+			
 			if jwsRequired {
 				os.Remove(tmpPath)
 				return fmt.Errorf("JWS required but generation failed: %w", err)
 			}
 			// Mode dégradé : continuer sans JWS
+			metrics.RecordJWSSignature("degraded")
 			db.log.Warn().Err(err).Msg("JWS generation failed, continuing without evidence")
+		} else {
+			// Métrique : JWS succès (Sprint 3 Phase 2)
+			metrics.RecordJWSSignature("success")
+			metrics.RecordJWSSignatureDuration(jwsDuration)
 		}
 	}
 
 	// 9. AppendLedger (dans transaction avec verrou)
 	var ledgerHash string
 	if ledgerEnabled {
-		ledgerHash, err = ledger.AppendLedger(ctx, tx, docID, sha256Hex, jws)
+		ledgerStartTime := time.Now() // Sprint 3 Phase 2 : Mesure durée ledger
+		ledgerHash, err = ledger.AppendLedger(txCtx, tx, docID, sha256Hex, jws)
+		ledgerDuration := time.Since(ledgerStartTime).Seconds()
+		
 		if err != nil {
+			// Métrique : erreur ledger (Sprint 4 Phase 4.1)
+			metrics.RecordLedgerAppendError()
 			os.Remove(tmpPath)
 			return fmt.Errorf("failed to append to ledger: %w", err)
 		}
+		
+		// Métrique : ledger append succès (Sprint 3 Phase 2)
+		metrics.RecordLedgerAppendDuration(ledgerDuration)
+		metrics.LedgerEntries.Inc() // Incrémenter compteur ledger
 	}
 
 	// 10. UPDATE documents avec evidence_jws et ledger_hash
 	if jws != "" || ledgerHash != "" {
-		_, err = tx.Exec(ctx, `
+		_, err = tx.Exec(txCtx, `
 			UPDATE documents 
 			SET evidence_jws = $1, ledger_hash = $2
 			WHERE id = $3
@@ -129,8 +164,8 @@ func (db *DB) StoreDocumentWithEvidence(
 		}
 	}
 
-	// 11. COMMIT
-	if err := tx.Commit(ctx); err != nil {
+	// 11. COMMIT (avec timeout)
+	if err := tx.Commit(txCtx); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}

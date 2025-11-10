@@ -1,0 +1,41 @@
+# 📊 Configuration Prometheus — Dorevia Vault
+# Sprint 4 Phase 4.3 — Alerting & Supervision
+
+global:
+  scrape_interval: 30s      # Scrape toutes les 30 secondes
+  evaluation_interval: 30s  # Évaluer les règles toutes les 30 secondes
+  external_labels:
+    cluster: 'dorevia-vault'
+    environment: 'production'
+
+# Configuration Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'localhost:9093'  # Alertmanager par défaut
+
+# Règles d'alerte
+rule_files:
+  - 'alert_rules.yml'
+
+# Configuration des jobs de scrape
+scrape_configs:
+  # Job : Dorevia Vault
+  - job_name: 'dorevia_vault'
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+    scheme: 'https'
+    static_configs:
+      - targets:
+          - 'vault.doreviateam.com'
+        labels:
+          service: 'dorevia-vault'
+          environment: 'production'
+
+  # Job : Prometheus lui-même (optionnel)
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+

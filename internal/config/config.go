@@ -13,6 +13,15 @@ type Config struct {
 	DatabaseURL string `env:"DATABASE_URL" envDefault:""`
 	StorageDir  string `env:"STORAGE_DIR" envDefault:"/opt/dorevia-vault/storage"`
 	
+	// Audit Configuration (Sprint 4 Phase 4.2)
+	AuditDir string `env:"AUDIT_DIR" envDefault:"/opt/dorevia-vault/audit"`
+	
+	// Odoo Export Configuration (Sprint 4 Phase 4.3)
+	OdooURL      string `env:"ODOO_URL" envDefault:""`
+	OdooDatabase string `env:"ODOO_DATABASE" envDefault:""`
+	OdooUser     string `env:"ODOO_USER" envDefault:""`
+	OdooPassword string `env:"ODOO_PASSWORD" envDefault:""`
+	
 	// JWS Configuration (Sprint 2)
 	JWSEnabled         bool   `env:"JWS_ENABLED" envDefault:"true"`
 	JWSRequired        bool   `env:"JWS_REQUIRED" envDefault:"true"`

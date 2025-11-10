@@ -1,0 +1,160 @@
+# 📊 Règles d'Alerte Prometheus — Dorevia Vault
+# Sprint 4 Phase 4.3 — Alerting & Supervision
+
+groups:
+  - name: dorevia_vault_business
+    interval: 30s
+    rules:
+      # Alerte 1 : Taux d'erreur documents élevé
+      - alert: HighDocumentErrorRate
+        expr: |
+          (
+            rate(documents_vaulted_total{status="error"}[5m]) /
+            rate(documents_vaulted_total[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: vault
+          service: dorevia-vault
+        annotations:
+          summary: "Taux d'erreur élevé lors du stockage de documents"
+          description: |
+            {{ $value | humanizePercentage }} des documents échouent sur les 5 dernières minutes.
+            Vérifier les logs et la santé du système.
+
+      # Alerte 2 : Ledger append lent
+      - alert: SlowLedgerAppend
+        expr: |
+          histogram_quantile(0.95, rate(ledger_append_duration_seconds_bucket[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          component: ledger
+          service: dorevia-vault
+        annotations:
+          summary: "Ledger append lent (P95 > 2s)"
+          description: |
+            Le P95 du temps d'ajout au ledger est de {{ $value }}s.
+            Vérifier la charge de la base de données et les performances.
+
+      # Alerte 3 : Erreurs ledger fréquentes
+      - alert: FrequentLedgerErrors
+        expr: |
+          rate(ledger_append_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: ledger
+          service: dorevia-vault
+        annotations:
+          summary: "Erreurs ledger fréquentes"
+          description: |
+            {{ $value }} erreurs/seconde lors de l'ajout au ledger.
+            Vérifier l'intégrité de la base de données et les contraintes.
+
+      # Alerte 4 : Stockage presque plein
+      - alert: StorageNearlyFull
+        expr: |
+          (storage_size_bytes / system_disk_capacity_bytes) > 0.8
+        for: 1h
+        labels:
+          severity: critical
+          component: storage
+          service: dorevia-vault
+        annotations:
+          summary: "Stockage > 80% de capacité"
+          description: |
+            {{ $value | humanizePercentage }} du disque est utilisé.
+            Nettoyer les anciens fichiers ou augmenter la capacité.
+
+      # Alerte 5 : Stockage critique (>90%)
+      - alert: StorageCritical
+        expr: |
+          (storage_size_bytes / system_disk_capacity_bytes) > 0.9
+        for: 30m
+        labels:
+          severity: critical
+          component: storage
+          service: dorevia-vault
+        annotations:
+          summary: "Stockage critique (>90%)"
+          description: |
+            {{ $value | humanizePercentage }} du disque est utilisé.
+            Action immédiate requise.
+
+      # Alerte 6 : Mémoire système élevée
+      - alert: HighSystemMemoryUsage
+        expr: |
+          (system_memory_usage_bytes / system_memory_total_bytes) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+          service: dorevia-vault
+        annotations:
+          summary: "Utilisation mémoire système élevée (>90%)"
+          description: |
+            {{ $value | humanizePercentage }} de la mémoire est utilisée.
+            Vérifier les fuites mémoire et les processus.
+
+      # Alerte 7 : CPU système élevé
+      - alert: HighSystemCPUUsage
+        expr: |
+          system_cpu_usage_percent > 80
+        for: 15m
+        labels:
+          severity: warning
+          component: system
+          service: dorevia-vault
+        annotations:
+          summary: "Utilisation CPU élevée (>80%)"
+          description: |
+            CPU à {{ $value }}% pendant 15 minutes.
+            Vérifier la charge du système.
+
+      # Alerte 8 : Aucun document vaulté récemment (si volume attendu)
+      - alert: NoRecentDocuments
+        expr: |
+          rate(documents_vaulted_total{status="success"}[1h]) == 0
+        for: 2h
+        labels:
+          severity: info
+          component: vault
+          service: dorevia-vault
+        annotations:
+          summary: "Aucun document vaulté depuis 2 heures"
+          description: |
+            Aucun document n'a été stocké avec succès depuis 2 heures.
+            Vérifier la connectivité avec Odoo et les endpoints.
+
+      # Alerte 9 : Taux de réconciliation élevé
+      - alert: HighReconciliationRate
+        expr: |
+          rate(reconciliation_runs_total{status="success"}[1h]) > 0.1
+        for: 30m
+        labels:
+          severity: warning
+          component: reconcile
+          service: dorevia-vault
+        annotations:
+          summary: "Réconciliations fréquentes"
+          description: |
+            {{ $value }} réconciliations/heure détectées.
+            Vérifier l'intégrité des fichiers et de la base de données.
+
+      # Alerte 10 : Service down (via up metric)
+      - alert: ServiceDown
+        expr: |
+          up{job="dorevia_vault"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+          service: dorevia-vault
+        annotations:
+          summary: "Service Dorevia Vault down"
+          description: |
+            Le service n'est plus accessible par Prometheus.
+            Vérifier l'état du service systemd.
+
