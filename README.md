@@ -40,6 +40,12 @@ les documents électroniques (Factur-X, pièces jointes, rapports, etc.)
 - ✅ **Alerting & supervision** : Alertes Prometheus + Alertmanager + Export Odoo (Phase 4.3)
 - ✅ **Audit & conformité** : Rapports signés mensuels/trimestriels (Phase 4.4)
 
+### Sprint 5 — "Sécurité & Interopérabilité" (Complété — 100%)
+- ✅ **Sécurité & Key Management** : Intégration HashiCorp Vault, rotation multi-KID, chiffrement au repos (Phase 5.1)
+- ✅ **Authentification & Autorisation** : JWT/API Keys, RBAC avec 4 rôles, protection endpoints (Phase 5.2)
+- ✅ **Interopérabilité** : Validation Factur-X EN 16931, webhooks asynchrones Redis (Phase 5.3)
+- ✅ **Scalabilité** : Partitionnement ledger mensuel, optimisations base de données (Phase 5.4)
+
 ---
 
 ## 🌍 Environnement
@@ -52,7 +58,7 @@ les documents électroniques (Factur-X, pièces jointes, rapports, etc.)
 | **Reverse Proxy** | Caddy (HTTPS automatique via Let's Encrypt) |
 | **Logging** | Zerolog (JSON structuré) |
 | **Domaine** | [https://vault.doreviateam.com](https://vault.doreviateam.com) |
-| **Version actuelle** | **v1.2.0-rc1** (Sprint 4 Phase 4.4 complétée) |
+| **Version actuelle** | **v1.3.0** (Sprint 5 complété) |
 | **Auteur / Mainteneur** | [David Baron – Doreviateam](https://doreviateam.com) |
 
 ---
@@ -109,6 +115,15 @@ les documents électroniques (Factur-X, pièces jointes, rapports, etc.)
 | :-- | :-- | :-- |
 | `GET` | `/audit/export` | Export logs d'audit paginé (JSON/CSV) avec filtres date |
 | `GET` | `/audit/dates` | Liste des dates disponibles dans les logs |
+
+### Routes Sprint 5 — Sécurité & Interopérabilité
+
+| Méthode | Route | Description | Authentification |
+| :-- | :-- | :-- | :-- |
+| `POST` | `/api/v1/invoices` | Ingestion avec validation Factur-X (Phase 5.3) | `documents:write` |
+| `GET` | `/api/v1/ledger/verify/:id` | Vérification intégrité (webhook émis) | `documents:verify` |
+| `GET` | `/audit/export` | Export audit (protégé) | `audit:read` |
+| `GET` | `/api/v1/ledger/export` | Export ledger (protégé) | `ledger:read` |
 
 **Exemples** :
 ```bash
@@ -269,6 +284,29 @@ export LEDGER_ENABLED=true
 
 # Configuration Audit (Sprint 4 Phase 4.2)
 export AUDIT_DIR="/opt/dorevia-vault/audit"
+
+# Configuration Authentification (Sprint 5 Phase 5.2)
+export AUTH_ENABLED=true
+export AUTH_JWT_ENABLED=true
+export AUTH_APIKEY_ENABLED=true
+export AUTH_JWT_PUBLIC_KEY_PATH="/opt/dorevia-vault/keys/jwt-public.pem"
+
+# Configuration HashiCorp Vault (Sprint 5 Phase 5.1 - optionnel)
+export VAULT_ENABLED=false
+# export VAULT_ADDR="https://vault.example.com:8200"
+# export VAULT_TOKEN="hvs.xxxxx"
+# export VAULT_KEY_PATH="secret/data/dorevia/keys"
+
+# Configuration Factur-X (Sprint 5 Phase 5.3)
+export FACTURX_VALIDATION_ENABLED=true
+export FACTURX_VALIDATION_REQUIRED=false
+
+# Configuration Webhooks (Sprint 5 Phase 5.3 - optionnel)
+export WEBHOOKS_ENABLED=false
+# export WEBHOOKS_REDIS_URL="redis://localhost:6379/0"
+# export WEBHOOKS_SECRET_KEY="$(openssl rand -hex 32)"
+# export WEBHOOKS_WORKERS=3
+# export WEBHOOKS_URLS="document.vaulted:https://example.com/webhook/vaulted"
 ```
 
 **Génération des clés RSA** :
@@ -291,6 +329,7 @@ source /opt/dorevia-vault/setup_env.sh
 
 # Le script configure toutes les variables d'environnement
 # et vérifie les prérequis (clés RSA, PostgreSQL, etc.)
+# Inclut maintenant les variables Sprint 5 (Auth, Vault, Factur-X, Webhooks)
 ```
 
 ---
@@ -568,6 +607,15 @@ Pour plus de détails sur les formats, la structure et la vérification des sign
 - [`docs/audit_export_spec.md`](docs/audit_export_spec.md) — Spécification export rapports d'audit (Phase 4.4)
 - [`docs/CORRECTION_ROUTE_METRICS.md`](docs/CORRECTION_ROUTE_METRICS.md) — Correction route `/metrics`
 
+### Documentation Sprint 5
+
+- [`docs/SPRINT5_PLAN.md`](docs/SPRINT5_PLAN.md) — Plan détaillé Sprint 5 (Sécurité & Interopérabilité)
+- [`docs/security_vault_spec.md`](docs/security_vault_spec.md) — Spécification HSM/Vault & Key Management
+- [`docs/auth_rbac_spec.md`](docs/auth_rbac_spec.md) — Spécification authentification & autorisation
+- [`docs/facturx_validation_spec.md`](docs/facturx_validation_spec.md) — Spécification validation Factur-X
+- [`docs/webhooks_spec.md`](docs/webhooks_spec.md) — Spécification webhooks asynchrones
+- [`docs/partitioning_spec.md`](docs/partitioning_spec.md) — Spécification partitionnement ledger
+
 ---
 
 ## 🔒 Sécurité
@@ -578,7 +626,9 @@ Pour plus de détails sur les formats, la structure et la vérification des sign
 - **Ledger** : Hash-chaînage immuable avec verrou transactionnel
 - **Clés privées** : Permissions 600 (lecture/écriture propriétaire uniquement)
 - **Mode dégradé** : Continuité de service si JWS échoue (si `JWS_REQUIRED=false`)
-- **Authentification** : À venir (Sprint 4)
+- **Authentification** : ✅ JWT/API Keys + RBAC (Sprint 5)
+- **Key Management** : ✅ HashiCorp Vault / fichiers locaux (Sprint 5)
+- **Chiffrement au repos** : ✅ AES-256-GCM pour audit (Sprint 5)
 
 ---
 

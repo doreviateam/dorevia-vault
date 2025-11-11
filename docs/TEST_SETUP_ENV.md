@@ -65,17 +65,44 @@ Le script :
 
 Après exécution du script, les variables suivantes sont configurées :
 
+### Variables de Base
+
 | Variable | Valeur | Source |
 |:---------|:-------|:-------|
 | `PORT` | `8080` | Défaut |
 | `LOG_LEVEL` | `info` | Défaut |
 | `STORAGE_DIR` | `/opt/dorevia-vault/storage` | Défaut |
+
+### Configuration JWS (Sprint 2)
+
+| Variable | Valeur | Source |
+|:---------|:-------|:-------|
 | `JWS_ENABLED` | `true` | Défaut |
 | `JWS_REQUIRED` | `true` | Défaut |
 | `JWS_PRIVATE_KEY_PATH` | `/opt/dorevia-vault/keys/private.pem` | Détection automatique |
 | `JWS_PUBLIC_KEY_PATH` | `/opt/dorevia-vault/keys/public.pem` | Détection automatique |
 | `JWS_KID` | `key-2025-Q1` | Défaut |
+
+### Configuration Ledger (Sprint 2)
+
+| Variable | Valeur | Source |
+|:---------|:-------|:-------|
 | `LEDGER_ENABLED` | `true` | Défaut |
+
+### Configuration Sprint 5
+
+| Variable | Valeur | Source |
+|:---------|:-------|:-------|
+| `AUTH_ENABLED` | `false` | Défaut |
+| `AUTH_JWT_ENABLED` | `true` | Défaut |
+| `AUTH_APIKEY_ENABLED` | `true` | Défaut |
+| `AUTH_JWT_PUBLIC_KEY_PATH` | `/opt/dorevia-vault/keys/public.pem` | Détection automatique |
+| `VAULT_ENABLED` | `false` | Défaut |
+| `FACTURX_VALIDATION_ENABLED` | `true` | Défaut |
+| `FACTURX_VALIDATION_REQUIRED` | `false` | Défaut |
+| `WEBHOOKS_ENABLED` | `false` | Défaut |
+| `WEBHOOKS_REDIS_URL` | `redis://localhost:6379/0` | Défaut |
+| `WEBHOOKS_WORKERS` | `3` | Défaut |
 | `DATABASE_URL` | *(selon configuration)* | Prompt interactif ou variable existante |
 
 ---
@@ -132,6 +159,21 @@ source /opt/dorevia-vault/setup_env.sh
 
 ---
 
+---
+
+## 🆕 Mises à Jour Sprint 5
+
+Le script `setup_env.sh` a été mis à jour pour inclure les variables Sprint 5 :
+
+- ✅ **Authentification** : Variables `AUTH_*` configurées
+- ✅ **HashiCorp Vault** : Variables `VAULT_*` configurées (optionnel)
+- ✅ **Factur-X** : Variables `FACTURX_*` configurées
+- ✅ **Webhooks** : Variables `WEBHOOKS_*` configurées (optionnel)
+
+**Voir** : `docs/VARIABLES_ENVIRONNEMENT.md` pour la liste complète
+
+---
+
 **Document créé le** : Janvier 2025  
-**Dernier test** : Janvier 2025
+**Dernière mise à jour** : Janvier 2025 (Sprint 5)
 
