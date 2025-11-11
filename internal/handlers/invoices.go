@@ -13,6 +13,8 @@ import (
 	"github.com/doreviateam/dorevia-vault/internal/metrics"
 	"github.com/doreviateam/dorevia-vault/internal/models"
 	"github.com/doreviateam/dorevia-vault/internal/storage"
+	"github.com/doreviateam/dorevia-vault/internal/validation"
+	"github.com/doreviateam/dorevia-vault/internal/webhooks"
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 )
@@ -40,7 +42,7 @@ type InvoiceResponse struct {
 
 // InvoicesHandler gère l'endpoint POST /api/v1/invoices
 // Intègre JWS + Ledger si configurés
-func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Service, cfg *config.Config, log *zerolog.Logger, auditLogger *audit.Logger) fiber.Handler {
+func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Service, cfg *config.Config, log *zerolog.Logger, auditLogger *audit.Logger, webhookManager *webhooks.Manager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if db == nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -85,6 +87,40 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 			})
 		}
 
+		// Validation Factur-X (Sprint 5 Phase 5.3)
+		var facturXResult *validation.ValidationResult
+		if cfg.FacturXValidationEnabled {
+			validator := validation.NewFacturXValidator(*log)
+			contentType := "application/pdf" // Par défaut, peut être détecté depuis meta
+			if payload.Meta != nil {
+				if ct, ok := payload.Meta["content_type"].(string); ok {
+					contentType = ct
+				}
+			}
+			
+			result, err := validator.Validate(fileContent, contentType)
+			if err != nil {
+				log.Warn().Err(err).Msg("Factur-X validation error")
+			} else {
+				facturXResult = result
+				if !result.Valid {
+					log.Warn().
+						Strs("errors", result.Errors).
+						Msg("Factur-X validation failed")
+					// Retourner erreur si validation requise
+					if cfg.FacturXValidationRequired {
+						return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+							"error": "Factur-X validation failed",
+							"validation_errors": result.Errors,
+							"validation_warnings": result.Warnings,
+						})
+					}
+				} else {
+					log.Info().Msg("Factur-X validation successful")
+				}
+			}
+		}
+
 		// Extraire le nom de fichier depuis meta ou utiliser un nom par défaut
 		filename := "document.pdf"
 		if payload.Meta != nil {
@@ -109,8 +145,21 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 		defaultStatus := "PENDING"
 		doc.DispatchStatus = &defaultStatus
 
-		// Extraire les métadonnées facture si présentes
-		if payload.Meta != nil {
+		// Extraire les métadonnées facture
+		// Priorité : métadonnées Factur-X validées > métadonnées payload
+		if facturXResult != nil && facturXResult.Metadata != nil {
+			// Utiliser les métadonnées extraites de Factur-X
+			meta := facturXResult.Metadata
+			doc.InvoiceNumber = &meta.InvoiceNumber
+			doc.InvoiceDate = &meta.InvoiceDate
+			// Note: DueDate n'est pas stocké dans le modèle Document actuellement
+			doc.TotalHT = &meta.TotalHT
+			doc.TotalTTC = &meta.TotalTTC
+			doc.Currency = &meta.Currency
+			doc.SellerVAT = &meta.SellerVAT
+			doc.BuyerVAT = &meta.BuyerVAT
+		} else if payload.Meta != nil {
+			// Fallback vers métadonnées payload si Factur-X non disponible
 			if number, ok := payload.Meta["number"].(string); ok {
 				doc.InvoiceNumber = &number
 			}
@@ -276,6 +325,25 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 					"ledger_hash":   doc.LedgerHash != nil,
 				},
 			})
+		}
+
+		// Webhook : document.vaulted (Sprint 5 Phase 5.3)
+		if webhookManager != nil {
+			webhookPayload := map[string]interface{}{
+				"document_id":   doc.ID.String(),
+				"sha256_hex":    doc.SHA256Hex,
+				"filename":      filename,
+				"size_bytes":    len(fileContent),
+				"created_at":    doc.CreatedAt,
+				"evidence_jws":  doc.EvidenceJWS != nil,
+				"ledger_hash":    doc.LedgerHash != nil,
+				"odoo_id":        payload.OdooID,
+				"model":          payload.Model,
+				"source":         source,
+			}
+			if err := webhookManager.EmitEvent(ctx, webhooks.EventTypeDocumentVaulted, doc.ID.String(), webhookPayload); err != nil {
+				log.Warn().Err(err).Msg("Failed to emit webhook event")
+			}
 		}
 
 		// Succès - retourner 201 Created

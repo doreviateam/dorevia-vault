@@ -92,6 +92,96 @@ echo "   LEDGER_ENABLED=$LEDGER_ENABLED"
 echo ""
 
 # ============================================================================
+# CONFIGURATION SPRINT 5 - AUTHENTIFICATION & AUTORISATION
+# ============================================================================
+
+export AUTH_ENABLED="${AUTH_ENABLED:-false}"
+export AUTH_JWT_ENABLED="${AUTH_JWT_ENABLED:-true}"
+export AUTH_APIKEY_ENABLED="${AUTH_APIKEY_ENABLED:-true}"
+
+# Chemin clé publique JWT (peut être la même que JWS)
+JWT_PUBLIC_KEY_PATH="${AUTH_JWT_PUBLIC_KEY_PATH:-${JWS_PUBLIC_KEY_PATH:-/opt/dorevia-vault/keys/public.pem}}"
+if [ -f "$JWT_PUBLIC_KEY_PATH" ]; then
+    export AUTH_JWT_PUBLIC_KEY_PATH="$JWT_PUBLIC_KEY_PATH"
+    echo -e "${GREEN}✅ Clé publique JWT trouvée${NC}"
+    echo "   AUTH_JWT_PUBLIC_KEY_PATH=$AUTH_JWT_PUBLIC_KEY_PATH"
+else
+    echo -e "${YELLOW}⚠️  Clé publique JWT non trouvée${NC}"
+    echo "   AUTH_JWT_PUBLIC_KEY_PATH non configuré"
+fi
+
+echo "✅ Configuration Authentification:"
+echo "   AUTH_ENABLED=$AUTH_ENABLED"
+echo "   AUTH_JWT_ENABLED=$AUTH_JWT_ENABLED"
+echo "   AUTH_APIKEY_ENABLED=$AUTH_APIKEY_ENABLED"
+echo ""
+
+# ============================================================================
+# CONFIGURATION SPRINT 5 - HASHICORP VAULT (Optionnel)
+# ============================================================================
+
+export VAULT_ENABLED="${VAULT_ENABLED:-false}"
+export VAULT_ADDR="${VAULT_ADDR:-}"
+export VAULT_TOKEN="${VAULT_TOKEN:-}"
+export VAULT_KEY_PATH="${VAULT_KEY_PATH:-secret/data/dorevia/keys}"
+
+if [ "$VAULT_ENABLED" = "true" ]; then
+    if [ -z "$VAULT_ADDR" ] || [ -z "$VAULT_TOKEN" ]; then
+        echo -e "${YELLOW}⚠️  Vault activé mais VAULT_ADDR ou VAULT_TOKEN non configuré${NC}"
+        echo "   Format VAULT_ADDR: https://vault.example.com:8200"
+        echo "   Format VAULT_TOKEN: hvs.xxxxx"
+    else
+        echo -e "${GREEN}✅ Configuration Vault détectée${NC}"
+        echo "   VAULT_ADDR=$VAULT_ADDR"
+        echo "   VAULT_KEY_PATH=$VAULT_KEY_PATH"
+    fi
+else
+    echo "✅ Vault: Désactivé (utilisation fichiers locaux)"
+fi
+echo ""
+
+# ============================================================================
+# CONFIGURATION SPRINT 5 - VALIDATION FACTUR-X
+# ============================================================================
+
+export FACTURX_VALIDATION_ENABLED="${FACTURX_VALIDATION_ENABLED:-true}"
+export FACTURX_VALIDATION_REQUIRED="${FACTURX_VALIDATION_REQUIRED:-false}"
+
+echo "✅ Configuration Factur-X:"
+echo "   FACTURX_VALIDATION_ENABLED=$FACTURX_VALIDATION_ENABLED"
+echo "   FACTURX_VALIDATION_REQUIRED=$FACTURX_VALIDATION_REQUIRED"
+echo ""
+
+# ============================================================================
+# CONFIGURATION SPRINT 5 - WEBHOOKS ASYNCHRONES
+# ============================================================================
+
+export WEBHOOKS_ENABLED="${WEBHOOKS_ENABLED:-false}"
+export WEBHOOKS_REDIS_URL="${WEBHOOKS_REDIS_URL:-redis://localhost:6379/0}"
+export WEBHOOKS_SECRET_KEY="${WEBHOOKS_SECRET_KEY:-}"
+export WEBHOOKS_WORKERS="${WEBHOOKS_WORKERS:-3}"
+export WEBHOOKS_URLS="${WEBHOOKS_URLS:-}"
+
+if [ "$WEBHOOKS_ENABLED" = "true" ]; then
+    if [ -z "$WEBHOOKS_SECRET_KEY" ]; then
+        echo -e "${YELLOW}⚠️  Webhooks activés mais WEBHOOKS_SECRET_KEY non configuré${NC}"
+        echo "   Pour générer une clé: openssl rand -hex 32"
+    else
+        echo -e "${GREEN}✅ Configuration Webhooks détectée${NC}"
+        echo "   WEBHOOKS_REDIS_URL=$WEBHOOKS_REDIS_URL"
+        echo "   WEBHOOKS_WORKERS=$WEBHOOKS_WORKERS"
+        if [ -n "$WEBHOOKS_URLS" ]; then
+            echo "   WEBHOOKS_URLS configuré"
+        else
+            echo -e "${YELLOW}   WEBHOOKS_URLS non configuré${NC}"
+        fi
+    fi
+else
+    echo "✅ Webhooks: Désactivés"
+fi
+echo ""
+
+# ============================================================================
 # VÉRIFICATIONS
 # ============================================================================
 
@@ -181,6 +271,46 @@ echo "Ledger:"
 echo "  LEDGER_ENABLED=$LEDGER_ENABLED"
 echo ""
 
+# Sprint 5 - Authentification
+if [ "$AUTH_ENABLED" = "true" ]; then
+    echo -e "${GREEN}✅ Authentification: Activée${NC}"
+    echo "  AUTH_ENABLED=$AUTH_ENABLED"
+    echo "  AUTH_JWT_ENABLED=$AUTH_JWT_ENABLED"
+    echo "  AUTH_APIKEY_ENABLED=$AUTH_APIKEY_ENABLED"
+    if [ -n "${AUTH_JWT_PUBLIC_KEY_PATH:-}" ]; then
+        echo "  AUTH_JWT_PUBLIC_KEY_PATH=$AUTH_JWT_PUBLIC_KEY_PATH"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Authentification: Désactivée${NC}"
+fi
+echo ""
+
+# Sprint 5 - Vault
+if [ "$VAULT_ENABLED" = "true" ]; then
+    echo -e "${GREEN}✅ Vault: Activé${NC}"
+    echo "  VAULT_ADDR=$VAULT_ADDR"
+    echo "  VAULT_KEY_PATH=$VAULT_KEY_PATH"
+else
+    echo "Vault: Désactivé (fichiers locaux)"
+fi
+echo ""
+
+# Sprint 5 - Factur-X
+echo "Factur-X:"
+echo "  FACTURX_VALIDATION_ENABLED=$FACTURX_VALIDATION_ENABLED"
+echo "  FACTURX_VALIDATION_REQUIRED=$FACTURX_VALIDATION_REQUIRED"
+echo ""
+
+# Sprint 5 - Webhooks
+if [ "$WEBHOOKS_ENABLED" = "true" ]; then
+    echo -e "${GREEN}✅ Webhooks: Activés${NC}"
+    echo "  WEBHOOKS_REDIS_URL=$WEBHOOKS_REDIS_URL"
+    echo "  WEBHOOKS_WORKERS=$WEBHOOKS_WORKERS"
+else
+    echo "Webhooks: Désactivés"
+fi
+echo ""
+
 # ============================================================================
 # INSTRUCTIONS
 # ============================================================================
@@ -207,6 +337,31 @@ if [ "$JWS_ENABLED" = "true" ] && [ -n "${JWS_PRIVATE_KEY_PATH:-}" ]; then
     echo "  export JWS_KID=$JWS_KID"
 fi
 echo "  export LEDGER_ENABLED=$LEDGER_ENABLED"
+if [ "$AUTH_ENABLED" = "true" ]; then
+    echo "  export AUTH_ENABLED=$AUTH_ENABLED"
+    echo "  export AUTH_JWT_ENABLED=$AUTH_JWT_ENABLED"
+    echo "  export AUTH_APIKEY_ENABLED=$AUTH_APIKEY_ENABLED"
+    if [ -n "${AUTH_JWT_PUBLIC_KEY_PATH:-}" ]; then
+        echo "  export AUTH_JWT_PUBLIC_KEY_PATH=\"$AUTH_JWT_PUBLIC_KEY_PATH\""
+    fi
+fi
+if [ "$VAULT_ENABLED" = "true" ]; then
+    echo "  export VAULT_ENABLED=$VAULT_ENABLED"
+    echo "  export VAULT_ADDR=\"$VAULT_ADDR\""
+    echo "  export VAULT_TOKEN=\"$VAULT_TOKEN\""
+    echo "  export VAULT_KEY_PATH=\"$VAULT_KEY_PATH\""
+fi
+echo "  export FACTURX_VALIDATION_ENABLED=$FACTURX_VALIDATION_ENABLED"
+echo "  export FACTURX_VALIDATION_REQUIRED=$FACTURX_VALIDATION_REQUIRED"
+if [ "$WEBHOOKS_ENABLED" = "true" ]; then
+    echo "  export WEBHOOKS_ENABLED=$WEBHOOKS_ENABLED"
+    echo "  export WEBHOOKS_REDIS_URL=\"$WEBHOOKS_REDIS_URL\""
+    echo "  export WEBHOOKS_SECRET_KEY=\"$WEBHOOKS_SECRET_KEY\""
+    echo "  export WEBHOOKS_WORKERS=$WEBHOOKS_WORKERS"
+    if [ -n "$WEBHOOKS_URLS" ]; then
+        echo "  export WEBHOOKS_URLS=\"$WEBHOOKS_URLS\""
+    fi
+fi
 echo ""
 echo "Ou utilisez ce script à chaque session:"
 echo "  source /opt/dorevia-vault/setup_env.sh"

@@ -11,6 +11,7 @@ import (
 	"github.com/doreviateam/dorevia-vault/internal/crypto"
 	"github.com/doreviateam/dorevia-vault/internal/storage"
 	"github.com/doreviateam/dorevia-vault/internal/verify"
+	"github.com/doreviateam/dorevia-vault/internal/webhooks"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -24,7 +25,7 @@ type VerifyResponse struct {
 
 // VerifyHandler gère l'endpoint GET /api/v1/ledger/verify/:document_id
 // Option ?signed=true : Génère un JWS signé du résultat (preuve auditable)
-func VerifyHandler(db *storage.DB, jwsService *crypto.Service, log *zerolog.Logger, auditLogger *audit.Logger) fiber.Handler {
+func VerifyHandler(db *storage.DB, jwsService *crypto.Service, log *zerolog.Logger, auditLogger *audit.Logger, webhookManager *webhooks.Manager) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if db == nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -118,6 +119,20 @@ func VerifyHandler(db *storage.DB, jwsService *crypto.Service, log *zerolog.Logg
 					"checks":       len(result.Checks),
 				},
 			})
+		}
+
+		// Webhook : document.verified (Sprint 5 Phase 5.3)
+		if webhookManager != nil {
+			webhookPayload := map[string]interface{}{
+				"document_id":  result.DocumentID,
+				"valid":        result.Valid,
+				"checks":       result.Checks,
+				"signed_proof": c.Query("signed") == "true",
+				"duration_ms":  time.Since(startTime).Milliseconds(),
+			}
+			if err := webhookManager.EmitEvent(ctx, webhooks.EventTypeDocumentVerified, docIDStr, webhookPayload); err != nil {
+				log.Warn().Err(err).Msg("Failed to emit webhook event")
+			}
 		}
 
 		// Déterminer le code de statut HTTP

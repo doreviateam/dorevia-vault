@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"context"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -25,10 +26,12 @@ type Service struct {
 	privateKey *rsa.PrivateKey
 	publicKey  *rsa.PublicKey
 	kid        string
+	keyManager KeyManager // Optionnel : pour support Vault
 }
 
 // NewService crée un nouveau service JWS
 // Charge les clés depuis les fichiers PEM ou variables d'environnement
+// (Méthode legacy - utilise NewServiceWithKeyManager pour support Vault)
 func NewService(privateKeyPath, publicKeyPath, kid string) (*Service, error) {
 	// Essayer de charger depuis les fichiers
 	privateKey, publicKey, err := loadKeysFromFiles(privateKeyPath, publicKeyPath)
@@ -44,6 +47,30 @@ func NewService(privateKeyPath, publicKeyPath, kid string) (*Service, error) {
 		privateKey: privateKey,
 		publicKey: publicKey,
 		kid:        kid,
+	}, nil
+}
+
+// NewServiceWithKeyManager crée un nouveau service JWS avec KeyManager
+// Permet d'utiliser Vault ou fichiers locaux de manière transparente
+func NewServiceWithKeyManager(keyManager KeyManager, kid string) (*Service, error) {
+	ctx := context.Background()
+
+	// Charger les clés depuis le KeyManager
+	privateKey, err := keyManager.GetPrivateKey(ctx, kid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load private key from key manager: %w", err)
+	}
+
+	publicKey, err := keyManager.GetPublicKey(ctx, kid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load public key from key manager: %w", err)
+	}
+
+	return &Service{
+		privateKey: privateKey,
+		publicKey:  publicKey,
+		kid:        kid,
+		keyManager: keyManager,
 	}, nil
 }
 

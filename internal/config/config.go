@@ -33,6 +33,24 @@ type Config struct {
 	
 	// Ledger Configuration (Sprint 2)
 	LedgerEnabled bool `env:"LEDGER_ENABLED" envDefault:"true"`
+	
+	// Auth Configuration (Sprint 5 Phase 5.2)
+	AuthEnabled    bool   `env:"AUTH_ENABLED" envDefault:"false"`
+	JWTEnabled     bool   `env:"AUTH_JWT_ENABLED" envDefault:"true"`
+	APIKeyEnabled  bool   `env:"AUTH_APIKEY_ENABLED" envDefault:"true"`
+	JWTPublicKeyPath string `env:"AUTH_JWT_PUBLIC_KEY_PATH" envDefault:""`
+	
+	// Factur-X Validation Configuration (Sprint 5 Phase 5.3)
+	FacturXValidationEnabled  bool `env:"FACTURX_VALIDATION_ENABLED" envDefault:"true"`
+	FacturXValidationRequired bool `env:"FACTURX_VALIDATION_REQUIRED" envDefault:"false"`
+	
+	// Webhooks Configuration (Sprint 5 Phase 5.3)
+	WebhooksEnabled    bool   `env:"WEBHOOKS_ENABLED" envDefault:"false"`
+	WebhooksRedisURL   string `env:"WEBHOOKS_REDIS_URL" envDefault:"redis://localhost:6379/0"`
+	WebhooksSecretKey  string `env:"WEBHOOKS_SECRET_KEY" envDefault:""`
+	WebhooksWorkers    int    `env:"WEBHOOKS_WORKERS" envDefault:"3"`
+	// URLs webhooks par événement (format: event1:url1,url2|event2:url3)
+	WebhooksURLs       string `env:"WEBHOOKS_URLS" envDefault:""`
 }
 
 // Load charge la configuration depuis les variables d'environnement
