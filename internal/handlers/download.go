@@ -54,8 +54,19 @@ func DownloadHandler(db *storage.DB) fiber.Handler {
 
 		// Définir les headers pour le téléchargement
 		c.Set("Content-Type", doc.ContentType)
-		c.Set("Content-Disposition", `attachment; filename="`+doc.Filename+`"`)
+		c.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, doc.Filename))
 		c.Set("Content-Length", fmt.Sprintf("%d", doc.SizeBytes))
+
+		// Ajouter ETag basé sur SHA256 pour cache HTTP
+		if doc.SHA256Hex != "" {
+			etag := fmt.Sprintf(`"%s"`, doc.SHA256Hex)
+			c.Set("ETag", etag)
+
+			// Vérifier If-None-Match pour 304 Not Modified
+			if match := c.Get("If-None-Match"); match == etag {
+				return c.SendStatus(fiber.StatusNotModified)
+			}
+		}
 
 		// Envoyer le fichier
 		return c.SendFile(doc.StoredPath)

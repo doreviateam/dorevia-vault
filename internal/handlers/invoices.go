@@ -362,3 +362,13 @@ func InvoicesHandler(db *storage.DB, storageDir string, jwsService *crypto.Servi
 		})
 	}
 }
+
+// GetInvoice gère GET /api/v1/invoices -> 405 Method Not Allowed
+// Retourne une erreur claire avec header Allow: POST
+func GetInvoice(c *fiber.Ctx) error {
+	c.Set("Allow", "POST")
+	return c.Status(fiber.StatusMethodNotAllowed).JSON(fiber.Map{
+		"error":   "Method Not Allowed",
+		"message": "Only POST method is allowed for /api/v1/invoices",
+	})
+}

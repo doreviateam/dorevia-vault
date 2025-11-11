@@ -212,13 +212,17 @@ func main() {
 	app.Use(middleware.Logger(log))
 	// 5. CORS : gère les en-têtes CORS
 	app.Use(middleware.CORS())
-	// 6. RateLimit : limite en dernier (après métriques)
+	// 6. Prometheus : métriques HTTP par route/méthode/code
+	app.Use(middleware.PrometheusMiddleware())
+	// 7. RateLimit : limite en dernier (après métriques)
 	app.Use(middleware.RateLimit())
 
 	// Enregistrement des routes de base
 	app.Get("/", handlers.Home)
 	app.Get("/health", handlers.Health)
 	app.Get("/health/detailed", handlers.DetailedHealthHandler(db, cfg.StorageDir, jwsService))
+	app.Get("/health/live", handlers.HealthLive)
+	app.Get("/health/ready", handlers.DetailedHealthHandler(db, cfg.StorageDir, jwsService)) // Réutilise detailed pour readiness
 	app.Get("/version", handlers.Version)
 
 	// Route Prometheus /metrics (Sprint 3 Phase 2)
@@ -320,6 +324,7 @@ func main() {
 			invoicesGroup.Use(auth.RequirePermission(rbacService, auth.PermissionWriteDocuments, *log))
 		}
 		invoicesGroup.Post("", handlers.InvoicesHandler(db, cfg.StorageDir, jwsService, &cfg, log, auditLogger, webhookManager))
+		invoicesGroup.Get("", handlers.GetInvoice) // 405 Method Not Allowed pour GET
 
 		// Route Sprint 2 : Export ledger (permission ledger:read)
 		ledgerGroup := apiGroup.Group("/ledger")

@@ -1,0 +1,348 @@
+bash -lc 'cat <<PATCH > /tmp/vault_enhancements_v2.patch
+diff --git a/internal/handlers/system.go b/internal/handlers/system.go
+index 1111111..2222222 100644
+--- a/internal/handlers/system.go
++++ b/internal/handlers/system.go
+@@ -1,8 +1,43 @@
+ package handlers
+ 
+ import (
+-	"github.com/gofiber/fiber/v2"
++	"net/http"
++	"os/exec"
++	"time"
++	"github.com/gofiber/fiber/v2"
+ )
+ 
++// GET /version — version enrichie
++func Version(c *fiber.Ctx) error {
++	commit, _ := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
++	info := fiber.Map{
++		"version":  "1.3.0",
++		"schema":   "2025-11-11_0012",
++		"commit":   string(commit),
++		"built_at": time.Now().UTC().Format(time.RFC3339),
++	}
++	return c.JSON(info)
++}
++
++// GET /health/live — liveness
++func HealthLive(c *fiber.Ctx) error {
++	return c.SendStatus(http.StatusOK)
++}
++
++// GET /health/ready — readiness (léger ici ; branche sur ton detailed si dispo)
++func HealthReady(c *fiber.Ctx) error {
++	return c.JSON(fiber.Map{
++		"status":    "ok",
++		"timestamp": time.Now().UTC().Format(time.RFC3339),
++	})
++}
++
+diff --git a/internal/handlers/download.go b/internal/handlers/download.go
+index 3333333..4444444 100644
+--- a/internal/handlers/download.go
++++ b/internal/handlers/download.go
+@@ -1,11 +1,24 @@
+ package handlers
+ 
+ import (
++	"fmt"
+ 	"github.com/gofiber/fiber/v2"
+ )
+ 
+ func DownloadDocument(c *fiber.Ctx) error {
+ 	// ... récupération doc + vérifs existantes ...
+-	c.Type("application/pdf")
+-	return c.SendFile(doc.StoredPath)
++	c.Type("application/pdf")
++	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", doc.Filename))
++	c.Set("ETag", fmt.Sprintf("\"%s\"", doc.SHA256Hex))
++	if match := c.Get("If-None-Match"); match == fmt.Sprintf("\"%s\"", doc.SHA256Hex) {
++		return c.SendStatus(fiber.StatusNotModified)
++	}
++	return c.SendFile(doc.StoredPath)
+ }
+ 
+diff --git a/internal/handlers/invoices.go b/internal/handlers/invoices.go
+index 5555555..6666666 100644
+--- a/internal/handlers/invoices.go
++++ b/internal/handlers/invoices.go
+@@ -1,9 +1,16 @@
+ package handlers
+ 
+ import (
+ 	"github.com/gofiber/fiber/v2"
+ )
+ 
+ func PostInvoice(c *fiber.Ctx) error {
+ 	// ... logique existante d ingestion ...
+ 	return c.JSON(fiber.Map{"ok": true})
+ }
++
++// GET /api/v1/invoices -> 405 + Allow: POST
++func GetInvoice(c *fiber.Ctx) error {
++	return c.Status(fiber.StatusMethodNotAllowed).
++		Set("Allow", "POST").
++		JSON(fiber.Map{"error": "Method Not Allowed"})
++}
+diff --git a/internal/middleware/metrics.go b/internal/middleware/metrics.go
+new file mode 100644
+index 0000000..7777777
+--- /dev/null
++++ b/internal/middleware/metrics.go
+@@ -0,0 +1,45 @@
++package middleware
++
++import (
++	"fmt"
++	"time"
++	"github.com/gofiber/fiber/v2"
++	"github.com/prometheus/client_golang/prometheus"
++)
++
++var (
++	httpRequestsTotal = prometheus.NewCounterVec(
++		prometheus.CounterOpts{
++			Name: "vault_http_requests_total",
++			Help: "Total des requêtes HTTP par route/méthode/code",
++		},
++		[]string{"route", "method", "code"},
++	)
++)
++
++func init() {
++	prometheus.MustRegister(httpRequestsTotal)
++}
++
++// PrometheusMiddleware comptabilise chaque requête par route/méthode/code
++func PrometheusMiddleware() fiber.Handler {
++	return func(c *fiber.Ctx) error {
++		start := time.Now()
++		err := c.Next()
++		_ = start // (prêt pour latences si tu veux un histo plus tard)
++		code := c.Response().StatusCode()
++		routePath := c.Route().Path
++		httpRequestsTotal.WithLabelValues(routePath, c.Method(), fmt.Sprint(code)).Inc()
++		return err
++	}
++}
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 8888888..9999999 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -1,21 +1,37 @@
+ package main
+ 
+ import (
+ 	"github.com/gofiber/fiber/v2"
+ 	"github.com/gofiber/fiber/v2/middleware/helmet"
+ 	"github.com/gofiber/fiber/v2/middleware/recover"
+ 	"github.com/gofiber/fiber/v2/middleware/requestid"
+ 	fiberadaptor "github.com/gofiber/fiber/v2/middleware/adaptor"
+ 	"github.com/prometheus/client_golang/prometheus/promhttp"
++	"github.com/doreviateam/dorevia-vault/internal/middleware"
++	"github.com/doreviateam/dorevia-vault/internal/handlers"
+ )
+ 
+ func main() {
+ 	app := fiber.New()
+ 
+ 	app.Use(helmet.New())
+ 	app.Use(recover.New())
+ 	app.Use(requestid.New())
++	app.Use(middleware.PrometheusMiddleware())
+ 
+ 	// Metrics (déjà existant) :
+ 	app.Get("/metrics", fiberadaptor.HTTPHandler(promhttp.Handler()))
+ 
++	// Version & Health split
++	app.Get("/version", handlers.Version)
++	app.Get("/health/live", handlers.HealthLive)
++	app.Get("/health/ready", handlers.HealthReady)
++
++	// API invoices
++	api := app.Group("/api/v1")
++	api.Post("/invoices", handlers.PostInvoice)
++	api.Get("/invoices", handlers.GetInvoice) // 405 + Allow: POST
++
+ 	// ... tes autres routes ...
+ 
+ 	app.Listen(":8080")
+ }
+PATCH
+git apply /tmp/vault_enhancements_v2.patch && go mod tidy && go build -o dorevia-vault cmd/server/main.go'
+bash -lc 'cat <<PATCH > /tmp/vault_enhancements_v2.patch
+diff --git a/internal/handlers/system.go b/internal/handlers/system.go
+index 1111111..2222222 100644
+--- a/internal/handlers/system.go
++++ b/internal/handlers/system.go
+@@ -1,8 +1,43 @@
+ package handlers
+ 
+ import (
+-	"github.com/gofiber/fiber/v2"
++	"net/http"
++	"os/exec"
++	"time"
++	"github.com/gofiber/fiber/v2"
+ )
+ 
++// GET /version — version enrichie
++func Version(c *fiber.Ctx) error {
++	commit, _ := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
++	info := fiber.Map{
++		"version":  "1.3.0",
++		"schema":   "2025-11-11_0012",
++		"commit":   string(commit),
++		"built_at": time.Now().UTC().Format(time.RFC3339),
++	}
++	return c.JSON(info)
++}
++
++// GET /health/live — liveness
++func HealthLive(c *fiber.Ctx) error {
++	return c.SendStatus(http.StatusOK)
++}
++
++// GET /health/ready — readiness (léger ici ; branche sur ton detailed si dispo)
++func HealthReady(c *fiber.Ctx) error {
++	return c.JSON(fiber.Map{
++		"status":    "ok",
++		"timestamp": time.Now().UTC().Format(time.RFC3339),
++	})
++}
++
+diff --git a/internal/handlers/download.go b/internal/handlers/download.go
+index 3333333..4444444 100644
+--- a/internal/handlers/download.go
++++ b/internal/handlers/download.go
+@@ -1,11 +1,24 @@
+ package handlers
+ 
+ import (
++	"fmt"
+ 	"github.com/gofiber/fiber/v2"
+ )
+ 
+ func DownloadDocument(c *fiber.Ctx) error {
+ 	// ... récupération doc + vérifs existantes ...
+-	c.Type("application/pdf")
+-	return c.SendFile(doc.StoredPath)
++	c.Type("application/pdf")
++	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", doc.Filename))
++	c.Set("ETag", fmt.Sprintf("\"%s\"", doc.SHA256Hex))
++	if match := c.Get("If-None-Match"); match == fmt.Sprintf("\"%s\"", doc.SHA256Hex) {
++		return c.SendStatus(fiber.StatusNotModified)
++	}
++	return c.SendFile(doc.StoredPath)
+ }
+ 
+diff --git a/internal/handlers/invoices.go b/internal/handlers/invoices.go
+index 5555555..6666666 100644
+--- a/internal/handlers/invoices.go
++++ b/internal/handlers/invoices.go
+@@ -1,9 +1,16 @@
+ package handlers
+ 
+ import (
+ 	"github.com/gofiber/fiber/v2"
+ )
+ 
+ func PostInvoice(c *fiber.Ctx) error {
+ 	// ... logique existante d ingestion ...
+ 	return c.JSON(fiber.Map{"ok": true})
+ }
++
++// GET /api/v1/invoices -> 405 + Allow: POST
++func GetInvoice(c *fiber.Ctx) error {
++	return c.Status(fiber.StatusMethodNotAllowed).
++		Set("Allow", "POST").
++		JSON(fiber.Map{"error": "Method Not Allowed"})
++}
+diff --git a/internal/middleware/metrics.go b/internal/middleware/metrics.go
+new file mode 100644
+index 0000000..7777777
+--- /dev/null
++++ b/internal/middleware/metrics.go
+@@ -0,0 +1,45 @@
++package middleware
++
++import (
++	"fmt"
++	"time"
++	"github.com/gofiber/fiber/v2"
++	"github.com/prometheus/client_golang/prometheus"
++)
++
++var (
++	httpRequestsTotal = prometheus.NewCounterVec(
++		prometheus.CounterOpts{
++			Name: "vault_http_requests_total",
++			Help: "Total des requêtes HTTP par route/méthode/code",
++		},
++		[]string{"route", "method", "code"},
++	)
++)
++
++func init() {
++	prometheus.MustRegister(httpRequestsTotal)
++}
++
++// PrometheusMiddleware comptabilise chaque requête par route/méthode/code
++func PrometheusMiddleware() fiber.Handler {
++	return func(c *fiber.Ctx) error {
++		start := time.Now()
++		err := c.Next()
++		_ = start // (prêt pour latences si tu veux un histo plus tard)
++		code := c.Response().StatusCode()
++		routePath := c.Route().Path
++		httpRequestsTotal.WithLabelValues(routePath, c.Method(), fmt.Sprint(code)).Inc()
++		return err
++	}
++}
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 8888888..9999999 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -1,21 +1,37 @@
+ package main
+ 
+ import (
+ 	"github.com/gofiber/fiber/v2"
+ 	"github.com/gofiber/fiber/v2/middleware/helmet"
+ 	"github.com/gofiber/fiber/v2/middleware/recover"
+ 	"github.com/gofiber/fiber/v2/middleware/requestid"
+ 	fiberadaptor "github.com/gofiber/fiber/v2/middleware/adaptor"
+ 	"github.com/prometheus/client_golang/prometheus/promhttp"
++	"github.com/doreviateam/dorevia-vault/internal/middleware"
++	"github.com/doreviateam/dorevia-vault/internal/handlers"
+ )
+ 
+ func main() {
+ 	app := fiber.New()
+ 
+ 	app.Use(helmet.New())
+ 	app.Use(recover.New())
+ 	app.Use(requestid.New())
++	app.Use(middleware.PrometheusMiddleware())
+ 
+ 	// Metrics (déjà existant) :
+ 	app.Get("/metrics", fiberadaptor.HTTPHandler(promhttp.Handler()))
+ 
++	// Version & Health split
++	app.Get("/version", handlers.Version)
++	app.Get("/health/live", handlers.HealthLive)
++	app.Get("/health/ready", handlers.HealthReady)
++
++	// API invoices
++	api := app.Group("/api/v1")
++	api.Post("/invoices", handlers.PostInvoice)
++	api.Get("/invoices", handlers.GetInvoice) // 405 + Allow: POST
++
+ 	// ... tes autres routes ...
+ 
+ 	app.Listen(":8080")
+ }
+PATCH
+git apply /tmp/vault_enhancements_v2.patch && go mod tidy && go build -o dorevia-vault cmd/server/main.go'
