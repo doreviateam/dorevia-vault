@@ -5,6 +5,63 @@ et respecte la sémantique de versionnage : `MAJEURE.MINEURE.PATCH`.
 
 ---
 
+## [1.4.0] — Janvier 2025
+
+### 🎫 Ingestion Native Tickets POS (Sprint 6)
+
+#### Ajouté
+
+**Phase 0 — Architecture Modulaire**
+- Interface `DocumentRepository` pour abstraction de la couche de stockage
+- Interface `ledger.Service` pour abstraction du service ledger
+- Interface `crypto.Signer` pour abstraction de la signature (HSM-ready)
+- Type `PosTicketInput` pour séparation handlers/services
+
+**Phase 1 — Préparation**
+- Migration DB : Champs POS (`payload_json`, `source_id_text`, `pos_session`, `cashier`, `location`)
+- Canonicalisation JSON : Tri des clés, suppression null, normalisation nombres
+- Index optimisés : GIN index sur `payload_json`, index partiels pour recherche POS
+
+**Phase 2 — Abstraction Crypto**
+- Adaptateur `LocalSigner` : Implémentation `Signer` utilisant `crypto.Service` existant
+- Support futur HSM via interface `Signer`
+
+**Phase 3 — Service Métier**
+- `PosTicketsService` : Service d'ingestion avec idempotence métier stricte
+- Hash basé sur `ticket + source_id + pos_session` (Option A)
+- Intégration complète avec ledger et signer
+
+**Phase 4 — Handler API**
+- Endpoint `POST /api/v1/pos-tickets` : Ingestion native tickets POS
+- Validation complète (taille, champs obligatoires)
+- Réponse standardisée avec métadonnées complètes
+- Configuration `POS_TICKET_MAX_SIZE_BYTES` (défaut: 64 KB)
+
+**Phase 5 — Observabilité**
+- Métriques Prometheus : `documents_vaulted_total{status, source="pos"}`
+- Logs structurés avec contexte complet (tenant, source_model, source_id, document_id, sha256, ledger_hash, evidence_jws, duration)
+- Gestion code HTTP : 200 OK pour idempotence, 201 Created pour création
+
+**Phase 6 — Tests d'Intégration**
+- 5 tests d'intégration : End-to-end, idempotence, canonicalisation, métriques
+- 20 tests unitaires : Canonicalisation (4), Service (7), Handler (8), Signer (1)
+
+#### Modifié
+
+- `internal/models/document.go` : Champs POS ajoutés
+- `internal/storage/postgres.go` : Fonction `migrateSprint6()` ajoutée
+- `internal/config/config.go` : Configuration `PosTicketMaxSizeBytes` ajoutée
+- `cmd/vault/main.go` : Route POS enregistrée
+
+#### Documentation
+
+- `docs/POS_TICKETS_API.md` : Documentation complète de l'API POS
+- `docs/VALIDATION_SPRINT6.md` : Rapport de validation Sprint 6
+- `docs/PLAN_IMPLEMENTATION_SPRINT6_CORRIGE.md` : Plan d'implémentation détaillé
+- `RELEASE_NOTES_v1.4.0.md` : Notes de version complètes
+
+---
+
 ## [1.3.0] — Janvier 2025
 
 ### 🔐 Sécurité & Interopérabilité (Sprint 5)

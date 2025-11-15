@@ -14,8 +14,10 @@ import (
 	"github.com/doreviateam/dorevia-vault/internal/config"
 	"github.com/doreviateam/dorevia-vault/internal/crypto"
 	"github.com/doreviateam/dorevia-vault/internal/handlers"
+	"github.com/doreviateam/dorevia-vault/internal/ledger"
 	"github.com/doreviateam/dorevia-vault/internal/metrics"
 	"github.com/doreviateam/dorevia-vault/internal/middleware"
+	"github.com/doreviateam/dorevia-vault/internal/services"
 	"github.com/doreviateam/dorevia-vault/internal/storage"
 	"github.com/doreviateam/dorevia-vault/internal/webhooks"
 	"github.com/doreviateam/dorevia-vault/pkg/logger"
@@ -326,6 +328,29 @@ func main() {
 		invoicesGroup.Post("", handlers.InvoicesHandler(db, cfg.StorageDir, jwsService, &cfg, log, auditLogger, webhookManager))
 		invoicesGroup.Get("", handlers.GetInvoice) // 405 Method Not Allowed pour GET
 
+		// Route Sprint 6 : Endpoint POS tickets (permission documents:write)
+		posTicketsGroup := apiGroup.Group("/pos-tickets")
+		if rbacService != nil {
+			posTicketsGroup.Use(auth.RequirePermission(rbacService, auth.PermissionWriteDocuments, *log))
+		}
+		// Initialiser le service POS si DB et JWS sont disponibles
+		if db != nil && jwsService != nil {
+			// Créer le repository
+			repo := storage.NewPostgresRepository(db.Pool, log)
+			// Créer le service ledger
+			ledgerService := ledger.NewService()
+			// Créer le signer (adaptateur depuis jwsService)
+			signer := crypto.NewLocalSigner(jwsService)
+			// Créer le service POS
+			posTicketsService := services.NewPosTicketsService(repo, ledgerService, signer)
+			// Enregistrer les routes
+			posTicketsGroup.Post("", handlers.PosTicketsHandler(posTicketsService, &cfg, log))
+			posTicketsGroup.Get("", handlers.GetPosTicket) // 405 Method Not Allowed pour GET
+			log.Info().Msg("POS tickets endpoint enabled: /api/v1/pos-tickets")
+		} else {
+			log.Warn().Msg("POS tickets endpoint disabled (requires DB and JWS)")
+		}
+
 		// Route Sprint 2 : Export ledger (permission ledger:read)
 		ledgerGroup := apiGroup.Group("/ledger")
 		if rbacService != nil {
@@ -340,7 +365,7 @@ func main() {
 		}
 		verifyGroup.Get("/:document_id", handlers.VerifyHandler(db, jwsService, log, auditLogger, webhookManager))
 
-		log.Info().Msg("Database routes enabled: /dbhealth, /upload, /documents, /documents/:id, /download/:id, /api/v1/invoices, /api/v1/ledger/export, /api/v1/ledger/verify/:document_id")
+		log.Info().Msg("Database routes enabled: /dbhealth, /upload, /documents, /documents/:id, /download/:id, /api/v1/invoices, /api/v1/pos-tickets, /api/v1/ledger/export, /api/v1/ledger/verify/:document_id")
 	}
 
 	// Gestion de l'arrêt propre avec timeout

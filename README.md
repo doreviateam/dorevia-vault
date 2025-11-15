@@ -46,6 +46,14 @@ les documents électroniques (Factur-X, pièces jointes, rapports, etc.)
 - ✅ **Interopérabilité** : Validation Factur-X EN 16931, webhooks asynchrones Redis (Phase 5.3)
 - ✅ **Scalabilité** : Partitionnement ledger mensuel, optimisations base de données (Phase 5.4)
 
+### Sprint 6 — "Ingestion Native Tickets POS" (Complété — 100%)
+- ✅ **Architecture modulaire** : Interfaces abstraites (DocumentRepository, ledger.Service, crypto.Signer) pour extensibilité (Phase 0)
+- ✅ **Canonicalisation JSON** : Tri des clés, suppression null, normalisation nombres pour stabilité des hash (Phase 1)
+- ✅ **Service métier POS** : Idempotence métier stricte basée sur `ticket + source_id + pos_session` (Phase 3)
+- ✅ **Endpoint API** : `POST /api/v1/pos-tickets` pour ingestion native tickets POS au format JSON (Phase 4)
+- ✅ **Observabilité** : Métriques Prometheus et logs structurés pour monitoring (Phase 5)
+- ✅ **Tests exhaustifs** : 25 tests (20 unitaires + 5 intégration) — 100% de réussite (Phase 6)
+
 ---
 
 ## 🌍 Environnement
@@ -58,12 +66,12 @@ les documents électroniques (Factur-X, pièces jointes, rapports, etc.)
 | **Reverse Proxy** | Caddy (HTTPS automatique via Let's Encrypt) |
 | **Logging** | Zerolog (JSON structuré) |
 | **Domaine** | [https://vault.doreviateam.com](https://vault.doreviateam.com) |
-| **Version actuelle** | **v1.3.0** (Sprint 5 complété) |
+| **Version actuelle** | **v1.4.0** (Sprint 6 complété) |
 | **Auteur / Mainteneur** | [David Baron – Doreviateam](https://doreviateam.com) |
 
 ---
 
-## 🔧 Endpoints disponibles (v1.2.0-rc1)
+## 🔧 Endpoints disponibles (v1.4.0)
 
 ### Routes de base (toujours actives)
 
@@ -124,6 +132,13 @@ les documents électroniques (Factur-X, pièces jointes, rapports, etc.)
 | `GET` | `/api/v1/ledger/verify/:id` | Vérification intégrité (webhook émis) | `documents:verify` |
 | `GET` | `/audit/export` | Export audit (protégé) | `audit:read` |
 | `GET` | `/api/v1/ledger/export` | Export ledger (protégé) | `ledger:read` |
+
+### Routes Sprint 6 — Ingestion Native Tickets POS
+
+| Méthode | Route | Description | Authentification |
+| :-- | :-- | :-- | :-- |
+| `POST` | `/api/v1/pos-tickets` | Ingestion native tickets POS (JSON) avec idempotence métier | `documents:write` |
+| `GET` | `/api/v1/pos-tickets` | 405 Method Not Allowed (seul POST autorisé) | - |
 
 **Exemples** :
 ```bash
@@ -191,6 +206,27 @@ curl "https://vault.doreviateam.com/documents?search=facture&page=1&limit=20"
 
 # Téléchargement
 curl -O https://vault.doreviateam.com/download/{uuid}
+
+# Ingestion ticket POS (Sprint 6)
+curl -X POST https://vault.doreviateam.com/api/v1/pos-tickets \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "tenant": "laplatine",
+    "source_model": "pos.order",
+    "source_id": "POS/2025/0001",
+    "currency": "EUR",
+    "total_incl_tax": 12.50,
+    "total_excl_tax": 10.42,
+    "pos_session": "SESSION/2025/01/14-01",
+    "cashier": "Verena",
+    "location": "La Platine - Boutique",
+    "ticket": {
+      "lines": [{"product": "Crêpe Manioc Sucre", "quantity": 2, "unit_price": 3.50}],
+      "payments": [{"method": "CB", "amount": 12.50}]
+    }
+  }'
+# → {"id":"uuid","tenant":"laplatine","sha256_hex":"...","ledger_hash":"...","evidence_jws":"...","created_at":"..."}
 ```
 
 ---
@@ -206,12 +242,14 @@ curl -O https://vault.doreviateam.com/download/{uuid}
  │   └── audit/main.go          # CLI génération rapports d'audit (Sprint 4 Phase 4.4)
  ├── internal/
  │   ├── config/                # Configuration centralisée
- │   ├── handlers/              # Handlers HTTP (12+ handlers)
+ │   ├── handlers/              # Handlers HTTP (13+ handlers incluant POS)
  │   ├── middleware/            # Middlewares (CORS, rate limiting, logger)
  │   ├── models/                # Modèles de données
- │   ├── storage/               # PostgreSQL + requêtes + transactions
- │   ├── crypto/                # Module JWS (Sprint 2)
- │   ├── ledger/                # Module Ledger hash-chaîné (Sprint 2)
+ │   ├── storage/               # PostgreSQL + requêtes + transactions + Repository interface (Sprint 6)
+ │   ├── crypto/                # Module JWS (Sprint 2) + Signer interface (Sprint 6)
+ │   ├── ledger/                # Module Ledger hash-chaîné (Sprint 2) + Service interface (Sprint 6)
+ │   ├── services/              # Services métier incluant POS (Sprint 6)
+ │   ├── utils/                 # Utilitaires incluant canonicalisation JSON (Sprint 6)
  │   ├── health/                # Health checks avancés (Sprint 3)
  │   ├── metrics/               # Métriques Prometheus (Sprint 3+4)
  │   ├── verify/                # Vérification intégrité (Sprint 3)
@@ -224,9 +262,9 @@ curl -O https://vault.doreviateam.com/download/{uuid}
  │       └── pdf.go             # Génération rapports PDF (Phase 4.4)
  ├── pkg/logger/                # Logger structuré (zerolog)
  ├── tests/
- │   ├── unit/                  # Tests unitaires (115 tests)
- │   └── integration/           # Tests d'intégration (Sprint 2)
- ├── migrations/                # Migrations SQL (003, 004)
+ │   ├── unit/                  # Tests unitaires (165+ tests)
+ │   └── integration/           # Tests d'intégration (Sprint 2 + Sprint 6)
+ ├── migrations/                # Migrations SQL (001, 002, 003, 004, 005)
  ├── scripts/deploy.sh          # Script de déploiement
  ├── storage/                   # Stockage fichiers (YYYY/MM/DD/)
  └── docs/                      # Documentation complète
@@ -307,6 +345,9 @@ export WEBHOOKS_ENABLED=false
 # export WEBHOOKS_SECRET_KEY="$(openssl rand -hex 32)"
 # export WEBHOOKS_WORKERS=3
 # export WEBHOOKS_URLS="document.vaulted:https://example.com/webhook/vaulted"
+
+# Configuration POS (Sprint 6)
+export POS_TICKET_MAX_SIZE_BYTES=65536  # 64 KB par défaut
 ```
 
 **Génération des clés RSA** :
@@ -368,7 +409,7 @@ go test ./tests/integration/... -v
 ```
 
 **Statistiques** :
-- ✅ **145+ tests unitaires** — 100% de réussite
+- ✅ **165+ tests unitaires** — 100% de réussite
   - 19 tests existants (Sprint 1)
   - 15 tests JWS (Sprint 2)
   - 4 tests Ledger (Sprint 2)
@@ -379,8 +420,9 @@ go test ./tests/integration/... -v
   - 15+ tests Report (Sprint 4 Phase 4.4)
   - 14 tests PDF (Sprint 4 Phase 4.4)
   - 10 tests CLI (Sprint 4 Phase 4.4)
+  - 20 tests Sprint 6 (canonicalisation, service, handler, signer)
   - 13 tests autres
-- ⏳ **Tests d'intégration** — Prêts (nécessitent DB)
+- ✅ **Tests d'intégration** — 5 tests Sprint 6 (end-to-end, idempotence, canonicalisation, métriques)
 
 ---
 
@@ -565,12 +607,21 @@ Pour plus de détails sur les formats, la structure et la vérification des sign
 - [x] Tests unitaires (39 tests : 15 report + 14 PDF + 10 CLI)
 - [x] Documentation `audit_export_spec.md`
 
-### 🔄 Sprint 5+ — Sécurité & Interopérabilité (À venir)
-- [ ] Intégration HSM/Vault (HashiCorp Vault / AWS KMS)
-- [ ] Rotation multi-KID pour JWKS
-- [ ] Webhooks asynchrones (Queue Redis)
-- [ ] Validation Factur-X (EN 16931)
-- [ ] Partitionnement Ledger (si volume > 100k/an)
+### ✅ Sprint 6 — "Ingestion Native Tickets POS" (Complété — 100%)
+- [x] Architecture modulaire avec interfaces abstraites (Phase 0)
+- [x] Canonicalisation JSON pour stabilité des hash (Phase 1)
+- [x] Abstraction crypto (interface Signer HSM-ready) (Phase 2)
+- [x] Service métier POS avec idempotence stricte (Phase 3)
+- [x] Endpoint API `/api/v1/pos-tickets` (Phase 4)
+- [x] Observabilité (métriques Prometheus + logs structurés) (Phase 5)
+- [x] Tests exhaustifs (25 tests : 20 unitaires + 5 intégration) (Phase 6)
+- [x] Documentation complète (Phase 7)
+
+### 🔄 Sprint 7+ — Recherche & Analytics (À venir)
+- [ ] Recherche avancée dans tickets POS (filtres JSON)
+- [ ] Export tickets POS (CSV, JSON)
+- [ ] Statistiques POS (revenus, produits, sessions)
+- [ ] Intégration avec systèmes de paiement
 
 ---
 
@@ -616,6 +667,17 @@ Pour plus de détails sur les formats, la structure et la vérification des sign
 - [`docs/webhooks_spec.md`](docs/webhooks_spec.md) — Spécification webhooks asynchrones
 - [`docs/partitioning_spec.md`](docs/partitioning_spec.md) — Spécification partitionnement ledger
 
+### Documentation Sprint 6
+
+- [`docs/Dorevia_Vault_Sprint6_Specification.md`](docs/Dorevia_Vault_Sprint6_Specification.md) — Spécification initiale Sprint 6
+- [`docs/ANALYSE_EXPERTE_SPRINT6.md`](docs/ANALYSE_EXPERTE_SPRINT6.md) — Analyse experte de la spécification
+- [`docs/PLAN_IMPLEMENTATION_SPRINT6_CORRIGE.md`](docs/PLAN_IMPLEMENTATION_SPRINT6_CORRIGE.md) — Plan d'implémentation corrigé (7 phases)
+- [`docs/Avis_Architeque_Team.md`](docs/Avis_Architeque_Team.md) — Avis de l'équipe architecte
+- [`docs/POS_TICKETS_API.md`](docs/POS_TICKETS_API.md) — Documentation complète de l'API POS
+- [`docs/VALIDATION_SPRINT6.md`](docs/VALIDATION_SPRINT6.md) — Rapport de validation Sprint 6
+- [`docs/RAPPORT_SPRINT6_DETAILLE.md`](docs/RAPPORT_SPRINT6_DETAILLE.md) — Rapport détaillé Sprint 6
+- [`RELEASE_NOTES_v1.4.0.md`](RELEASE_NOTES_v1.4.0.md) — Notes de version v1.4.0
+
 ---
 
 ## 🔒 Sécurité
@@ -634,8 +696,8 @@ Pour plus de détails sur les formats, la structure et la vérification des sign
 
 ## 📊 Statistiques
 
-- **Fichiers Go** : 49 fichiers
-- **Tests unitaires** : 115 tests (100% réussite)
+- **Fichiers Go** : 66+ fichiers
+- **Tests unitaires** : 165+ tests (100% réussite)
   - 19 tests Sprint 1
   - 15 tests JWS (Sprint 2)
   - 4 tests Ledger (Sprint 2)
@@ -643,18 +705,25 @@ Pour plus de détails sur les formats, la structure et la vérification des sign
   - 22 tests Verify/Reconcile (Sprint 3)
   - 11 tests Metrics System (Sprint 4 Phase 4.1)
   - 16 tests Audit (Sprint 4 Phase 4.2)
+  - 20 tests Sprint 6 (canonicalisation, service, handler, signer)
   - 13 tests autres
-- **Endpoints** : 16 endpoints
+- **Tests d'intégration** : 5 tests Sprint 6 (end-to-end, idempotence, canonicalisation, métriques)
+- **Endpoints** : 17 endpoints
   - 5 routes de base (/, /health, /health/detailed, /version, /metrics)
   - 5 routes DB (Sprint 1)
   - 4 routes Sprint 2+3 (invoices, jwks, ledger/export, ledger/verify)
   - 2 routes Sprint 4 (audit/export, audit/dates)
+  - 1 route Sprint 6 (pos-tickets)
 - **Métriques Prometheus** : 17 métriques actives
   - 11 métriques métier (Sprint 3)
   - 6 métriques système (Sprint 4 Phase 4.1)
-- **Modules** : 12 packages modulaires
-  - `internal/crypto` (JWS)
-  - `internal/ledger` (hash-chaîné)
+  - Réutilisation pour tickets POS (Sprint 6)
+- **Modules** : 15+ packages modulaires
+  - `internal/crypto` (JWS + Signer interface)
+  - `internal/ledger` (hash-chaîné + Service interface)
+  - `internal/storage` (PostgreSQL + DocumentRepository interface)
+  - `internal/services` (Services métier incluant POS)
+  - `internal/utils` (Canonicalisation JSON)
   - `internal/health` (health checks)
   - `internal/metrics` (Prometheus + système)
   - `internal/verify` (vérification intégrité)
@@ -662,9 +731,9 @@ Pour plus de détails sur les formats, la structure et la vérification des sign
   - `internal/audit` (journalisation auditable)
   - `cmd/keygen` (génération clés)
   - `cmd/reconcile` (CLI réconciliation)
-- **Migrations SQL** : 4 migrations (001, 002, 003, 004)
+- **Migrations SQL** : 5 migrations (001, 002, 003, 004, 005)
 - **Binaires** : 2 (vault 22M, reconcile 17M)
-- **Version** : v1.2.0-rc1 (Sprint 4 Phase 4.4 complétée)
+- **Version** : v1.4.0 (Sprint 6 complété)
 
 ---
 

@@ -39,6 +39,13 @@ type Document struct {
 	// Preuves d'intégrité (Sprint 2)
 	EvidenceJWS *string `json:"evidence_jws,omitempty"` // Jeton JWS signé
 	LedgerHash  *string `json:"ledger_hash,omitempty"`  // Hash dans le ledger
+
+	// Champs POS (Sprint 6) - optionnels, NULL pour documents non-POS
+	SourceIDText *string                `json:"source_id_text,omitempty" db:"source_id_text"` // ID textuel (pour POS)
+	PayloadJSON  []byte                 `json:"payload_json,omitempty" db:"payload_json"`     // JSON brut (pour POS)
+	PosSession   *string                `json:"pos_session,omitempty" db:"pos_session"`
+	Cashier      *string                `json:"cashier,omitempty" db:"cashier"`
+	Location     *string                `json:"location,omitempty" db:"location"`
 }
 
 // DocumentListResponse représente la réponse pour la liste de documents

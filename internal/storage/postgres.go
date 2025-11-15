@@ -88,6 +88,11 @@ func (db *DB) migrate(ctx context.Context) error {
 		return fmt.Errorf("failed to apply Sprint 2 migration: %w", err)
 	}
 
+	// Migration Sprint 6 : Champs POS
+	if err := db.migrateSprint6(ctx); err != nil {
+		return fmt.Errorf("failed to apply Sprint 6 migration: %w", err)
+	}
+
 	db.log.Debug().Msg("Database migrations applied successfully")
 	return nil
 }
@@ -178,6 +183,42 @@ func (db *DB) migrateSprint2(ctx context.Context) error {
 	}
 
 	db.log.Debug().Msg("Sprint 2 migration applied successfully")
+	return nil
+}
+
+// migrateSprint6 applique la migration Sprint 6 (champs POS)
+func (db *DB) migrateSprint6(ctx context.Context) error {
+	migrationSQL := `
+		-- Champ pour stocker le JSON brut du ticket POS
+		ALTER TABLE documents ADD COLUMN IF NOT EXISTS payload_json JSONB;
+
+		-- Champ pour source_id textuel (pour POS avec IDs string)
+		ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_id_text TEXT;
+
+		-- Champs métier POS (optionnels, NULL pour les documents non-POS)
+		ALTER TABLE documents ADD COLUMN IF NOT EXISTS pos_session TEXT;
+		ALTER TABLE documents ADD COLUMN IF NOT EXISTS cashier TEXT;
+		ALTER TABLE documents ADD COLUMN IF NOT EXISTS location TEXT;
+
+		-- Index pour recherche rapide sur payload_json (GIN index pour JSONB)
+		CREATE INDEX IF NOT EXISTS idx_documents_payload_json ON documents USING GIN (payload_json);
+
+		-- Index pour recherche POS
+		CREATE INDEX IF NOT EXISTS idx_documents_source_id_text ON documents(source_id_text) WHERE source = 'pos';
+		CREATE INDEX IF NOT EXISTS idx_documents_pos_session ON documents(pos_session) WHERE source = 'pos';
+		CREATE INDEX IF NOT EXISTS idx_documents_cashier ON documents(cashier) WHERE source = 'pos';
+		CREATE INDEX IF NOT EXISTS idx_documents_location ON documents(location) WHERE source = 'pos';
+
+		-- Index composite pour recherche par source + odoo_model (optimisation POS)
+		CREATE INDEX IF NOT EXISTS idx_documents_source_model ON documents(source, odoo_model) 
+			WHERE source = 'pos' AND odoo_model = 'pos.order';
+	`
+
+	if _, err := db.Pool.Exec(ctx, migrationSQL); err != nil {
+		return fmt.Errorf("failed to apply Sprint 6 migration: %w", err)
+	}
+
+	db.log.Debug().Msg("Sprint 6 migration applied successfully")
 	return nil
 }
 

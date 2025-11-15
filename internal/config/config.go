@@ -51,6 +51,9 @@ type Config struct {
 	WebhooksWorkers    int    `env:"WEBHOOKS_WORKERS" envDefault:"3"`
 	// URLs webhooks par événement (format: event1:url1,url2|event2:url3)
 	WebhooksURLs       string `env:"WEBHOOKS_URLS" envDefault:""`
+	
+	// POS Configuration (Sprint 6)
+	PosTicketMaxSizeBytes int `env:"POS_TICKET_MAX_SIZE_BYTES" envDefault:"65536"` // 64 KB
 }
 
 // Load charge la configuration depuis les variables d'environnement
